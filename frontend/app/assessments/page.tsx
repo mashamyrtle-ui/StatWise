@@ -1,0 +1,338 @@
+'use client';
+
+import { useEffect, useState, useRef } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import { assessmentsApi } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { ClipboardList, ChevronLeft, ChevronRight, Timer, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+
+export default function AssessmentsPage() {
+  const { user } = useAuth();
+  const [phase, setPhase] = useState<'intro' | 'quiz' | 'result'>('intro');
+  const [assessment, setAssessment] = useState<any>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<any>(null);
+  const [current, setCurrent] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [startTime, setStartTime] = useState<number>(0);
+  const timerRef = useRef<any>(null);
+
+  const startAssessment = async () => {
+    setLoading(true);
+    try {
+      const res = await assessmentsApi.getDiagnostic();
+      setAssessment(res.data);
+      setCurrent(0);
+      setAnswers({});
+      setTimeLeft(res.data.time_limit_minutes * 60);
+      setStartTime(Date.now());
+      setPhase('quiz');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (phase !== 'quiz') return;
+    timerRef.current = setInterval(() => {
+      setTimeLeft(t => {
+        if (t <= 1) { clearInterval(timerRef.current); handleSubmit(); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [phase]);
+
+  const handleSubmit = async () => {
+    if (!assessment) return;
+    clearInterval(timerRef.current);
+    setSubmitting(true);
+    try {
+      const timeTaken = Math.round((Date.now() - startTime) / 1000);
+      const res = await assessmentsApi.submit(assessment.id, answers, timeTaken);
+      setResult(res.data);
+      setPhase('result');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+  const questions = assessment?.questions || [];
+  const q = questions[current];
+  const answered = Object.keys(answers).length;
+
+  if (phase === 'intro') return (
+    <div className="page-container animate-fade-in">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+          <ClipboardList size={22} className="text-navy-700" /> Competency Assessment
+        </h1>
+        <p className="text-slate-500 text-sm mt-1">Test your current skills and update your competency profile</p>
+      </div>
+
+      <div className="max-w-2xl">
+        <div className="gov-card p-8 text-center mb-6">
+          <div className="w-16 h-16 bg-navy-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <ClipboardList size={32} className="text-navy-700" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Competency Diagnostic Assessment</h2>
+          <p className="text-slate-500 text-sm mb-6">
+            A comprehensive diagnostic covering Statistical, Technical, Digital Governance, and Behavioural competencies.
+            Your results will update your competency profile and recalculate your personalized recommendations.
+          </p>
+          <div className="grid grid-cols-3 gap-4 mb-6 text-sm">
+            {[['20', 'Questions'], ['35 min', 'Time Limit'], ['5 areas', 'Covered']].map(([v, l]) => (
+              <div key={l} className="bg-slate-50 rounded-xl p-3">
+                <p className="font-bold text-navy-700 text-lg">{v}</p>
+                <p className="text-slate-500 text-xs">{l}</p>
+              </div>
+            ))}
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-left mb-6">
+            <p className="text-blue-700 text-sm font-medium mb-1">AI-Powered Intelligence</p>
+            <p className="text-blue-600 text-xs">
+              After completing the assessment, your competency scores will be updated and personalized course
+              recommendations will be recalculated.
+            </p>
+          </div>
+          <button
+            onClick={startAssessment}
+            disabled={loading}
+            className="bg-navy-700 hover:bg-navy-800 text-white font-semibold px-8 py-3 rounded-xl transition-colors flex items-center gap-2 mx-auto disabled:opacity-60"
+          >
+            {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+            Start Assessment
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (phase === 'quiz' && q) return (
+    <div className="page-container animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">Competency Assessment</h1>
+          <p className="text-slate-500 text-sm">Question {current + 1} of {questions.length} · {answered} answered</p>
+        </div>
+        <div className={cn(
+          'flex items-center gap-2 px-4 py-2 rounded-xl font-mono font-bold text-lg',
+          timeLeft < 120 ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-slate-100 text-slate-700'
+        )}>
+          <Timer size={18} /> {formatTime(timeLeft)}
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-2 bg-slate-100 rounded-full mb-6">
+        <div
+          className="h-full bg-navy-700 rounded-full transition-all duration-300"
+          style={{ width: `${(current + 1) / questions.length * 100}%` }}
+        />
+      </div>
+
+      {/* Question card */}
+      <div className="max-w-2xl">
+        <div className="gov-card p-8 mb-4">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-1 rounded">
+              Q{current + 1}
+            </span>
+            {q.difficulty && (
+              <span className="text-xs font-medium text-slate-500">{q.difficulty}</span>
+            )}
+          </div>
+          <p className="text-base font-semibold text-slate-800 mb-6 leading-relaxed">{q.question_text}</p>
+
+          <div className="space-y-3">
+            {(['A', 'B', 'C', 'D'] as const).map((opt) => {
+              const text = q[`option_${opt.toLowerCase()}` as keyof typeof q];
+              const isSelected = answers[String(q.id)] === opt;
+              return (
+                <button
+                  key={opt}
+                  onClick={() => setAnswers(prev => ({ ...prev, [String(q.id)]: opt }))}
+                  className={cn(
+                    'w-full text-left p-4 rounded-xl border-2 transition-all text-sm',
+                    isSelected
+                      ? 'border-navy-600 bg-navy-50 text-navy-800 font-medium'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-navy-300 hover:bg-slate-50'
+                  )}
+                >
+                  <span className={cn(
+                    'inline-block w-6 h-6 rounded-full text-xs font-bold text-center leading-6 mr-3 flex-shrink-0',
+                    isSelected ? 'bg-navy-700 text-white' : 'bg-slate-100 text-slate-600'
+                  )}>{opt}</span>
+                  {text}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setCurrent(c => Math.max(0, c - 1))}
+            disabled={current === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:border-navy-300 disabled:opacity-40 transition-all"
+          >
+            <ChevronLeft size={16} /> Previous
+          </button>
+
+          <div className="flex gap-1">
+            {questions.slice(0, 20).map((_: any, i: number) => (
+              <button
+                key={i}
+                onClick={() => setCurrent(i)}
+                className={cn(
+                  'w-6 h-6 rounded text-xs font-medium transition-all',
+                  i === current ? 'bg-navy-700 text-white' :
+                  answers[String(questions[i]?.id)] ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                )}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+
+          {current < questions.length - 1 ? (
+            <button
+              onClick={() => setCurrent(c => Math.min(questions.length - 1, c + 1))}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-navy-700 text-white text-sm font-medium hover:bg-navy-800 transition-all"
+            >
+              Next <ChevronRight size={16} />
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-all disabled:opacity-60"
+            >
+              {submitting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+              Submit Assessment
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (phase === 'result' && result) return (
+    <div className="page-container animate-fade-in">
+      <div className="max-w-3xl">
+        {/* Score card */}
+        <div className={cn(
+          'gov-card p-8 text-center mb-6',
+          result.score_percentage >= 80 ? 'border-emerald-200' : result.score_percentage >= 60 ? 'border-blue-200' : 'border-amber-200'
+        )}>
+          <div className={cn(
+            'w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4',
+            result.score_percentage >= 80 ? 'bg-emerald-50' : result.score_percentage >= 60 ? 'bg-blue-50' : 'bg-amber-50'
+          )}>
+            <span className={cn(
+              'text-3xl font-bold',
+              result.score_percentage >= 80 ? 'text-emerald-600' : result.score_percentage >= 60 ? 'text-blue-600' : 'text-amber-600'
+            )}>
+              {result.score_percentage.toFixed(0)}%
+            </span>
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-1">Assessment Complete!</h2>
+          <p className="text-slate-500">{result.correct_count} / {result.total_count} correct</p>
+          <p className="text-sm text-slate-600 mt-3">{result.summary}</p>
+        </div>
+
+        {/* Competency updates */}
+        {result.competency_updates?.length > 0 && (
+          <div className="gov-card p-6 mb-6">
+            <h3 className="section-header mb-4">Competency Updates</h3>
+            <div className="space-y-3">
+              {result.competency_updates.map((u: any) => (
+                <div key={u.competency_id} className="flex items-center gap-4">
+                  <span className="text-sm font-medium text-slate-700 w-40 flex-shrink-0">{u.competency_name}</span>
+                  <div className="flex-1 h-2 bg-slate-100 rounded-full">
+                    <div className="h-full bg-slate-300 rounded-full" style={{ width: `${u.before}%` }} />
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-500">{u.before.toFixed(0)}%</span>
+                    <ChevronRight size={14} className="text-slate-400" />
+                    <span className={cn('font-bold', u.delta >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+                      {u.after.toFixed(0)}%
+                    </span>
+                    <span className={cn('text-xs', u.delta >= 0 ? 'text-emerald-500' : 'text-red-400')}>
+                      {u.delta >= 0 ? '+' : ''}{u.delta.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Question review */}
+        <div className="gov-card">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <h3 className="section-header">Detailed Review</h3>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {result.question_results.map((qr: any, idx: number) => (
+              <div key={qr.question_id} className="px-6 py-4">
+                <div className="flex items-start gap-3">
+                  {qr.is_correct
+                    ? <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+                    : <XCircle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />}
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-800 mb-2">Q{idx + 1}. {qr.question_text}</p>
+                    <div className="grid grid-cols-2 gap-1 mb-2">
+                      {(['A', 'B', 'C', 'D'] as const).map(opt => {
+                        const text = qr[`option_${opt.toLowerCase()}`];
+                        const isCorrect = opt === qr.correct_answer;
+                        const isSelected = opt === qr.selected_answer;
+                        return (
+                          <div key={opt} className={cn(
+                            'text-xs p-2 rounded',
+                            isCorrect ? 'bg-emerald-50 text-emerald-700 font-medium' :
+                            isSelected && !isCorrect ? 'bg-red-50 text-red-700' : 'text-slate-500'
+                          )}>
+                            <span className="font-bold">{opt}.</span> {text}
+                            {isCorrect && <span className="ml-1">✓</span>}
+                            {isSelected && !isCorrect && <span className="ml-1">✗</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {qr.explanation && (
+                      <div className="bg-blue-50 border border-blue-100 rounded p-2">
+                        <p className="text-xs text-blue-700">{qr.explanation}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <Link href="/skill-gap" className="flex-1 text-center bg-navy-700 hover:bg-navy-800 text-white font-semibold py-3 rounded-xl transition-colors">
+            View Updated Skill Gaps
+          </Link>
+          <Link href="/courses" className="flex-1 text-center bg-white border border-slate-200 hover:border-navy-300 text-slate-700 font-semibold py-3 rounded-xl transition-colors">
+            View Recommendations
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+
+  return null;
+}
