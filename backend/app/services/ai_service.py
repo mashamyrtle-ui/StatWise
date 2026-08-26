@@ -493,7 +493,7 @@ Keep responses under 250 words unless the user asks for detailed explanations.""
 
 
 def _mock_assistant_response(user_message: str, user_context: dict) -> str:
-    """Deterministic fallback responses for the AI assistant."""
+    """Deterministic fallback responses for the AI assistant with rich statistical knowledge."""
     msg_lower = user_message.lower()
     name = user_context.get("name", "there")
     top_gap = user_context.get("top_gap", "Python")
@@ -514,66 +514,85 @@ def _mock_assistant_response(user_message: str, user_context: dict) -> str:
             f"Your strongest competencies are Statistics (88%) and Survey Design (82%). "
             f"Focusing on Python first will give you the highest return, as it underpins both GIS analysis and AI/ML."
         )
-    elif any(w in msg_lower for w in ["python", "programming"]):
+    elif any(w in msg_lower for w in ["python", "programming", "pandas", "numpy"]):
         return (
             f"**Python for Statistical Analysis** is essential for modern statistical officers. "
             f"In the context of India's NSO, Python is used for:\n"
-            f"- Automated data cleaning and processing of large PLFS/HCES datasets\n"
-            f"- Statistical computing (replacing SPSS/Stata for many tasks)\n"
+            f"- Automated data cleaning and processing of large PLFS/HCES microdata\n"
+            f"- Statistical computing (replacing proprietary software for survey tabulation)\n"
             f"- Data visualization with Matplotlib and Seaborn\n"
-            f"- API integration with government data portals\n\n"
-            f"The recommended learning path: Python Basics → Pandas for Data Analysis → Data Visualization → Statistical Computing in Python."
+            f"- API integration with government open data portals (e.g. data.gov.in)\n\n"
+            f"**Recommended learning path**: Python Basics → Pandas for Data Analysis → Data Visualization → Statistical Computing in Python."
         )
-    elif any(w in msg_lower for w in ["sampling", "sample"]):
+    elif any(w in msg_lower for w in ["sampling", "sample", "stratified", "cluster", "srs"]):
         return (
-            f"**Sampling** is fundamental to survey statistics. Key concepts:\n\n"
-            f"**Simple Random Sampling (SRS)**: Every unit has equal probability of selection. Gold standard for eliminating bias.\n\n"
-            f"**Stratified Sampling**: Divide population into homogeneous strata, sample from each. Used in PLFS and HCES.\n\n"
-            f"**Cluster Sampling**: Select clusters (villages/blocks), survey all units within. Cost-effective for large area surveys.\n\n"
-            f"**PPS Sampling**: Probability proportional to size — larger units have higher selection probability. Used in enterprise surveys.\n\n"
-            f"For NSO surveys, multi-stage stratified sampling is most common. Would you like practice questions on any of these?"
+            f"**Key Sampling Techniques in Official Statistics:**\n\n"
+            f"1. **Simple Random Sampling (SRS)**: Every unit has equal selection probability. Gold standard for unbiased estimation.\n\n"
+            f"2. **Stratified Sampling**: Population is divided into homogeneous strata (e.g. rural/urban, district-wise) and sampled from each. Guarantees sub-population representation. Used extensively in PLFS and HCES.\n\n"
+            f"3. **Cluster Sampling**: Primary units (e.g. census enumeration blocks, villages) are selected, and all or sub-sampled units within are surveyed. Economical for geographically dispersed surveys.\n\n"
+            f"4. **Probability Proportional to Size (PPS)**: Selection probability is proportional to size measure (e.g. enterprise workforce). Standard for Annual Survey of Industries (ASI)."
         )
-    elif any(w in msg_lower for w in ["gis", "geographic", "spatial"]):
+    elif any(w in msg_lower for w in ["concept", "statistic", "variance", "mean", "median", "standard deviation", "regression", "hypothesis", "p-value"]):
         return (
-            f"**GIS (Geographic Information Systems)** is increasingly critical for official statistics. Applications include:\n"
-            f"- Census enumeration block delineation\n"
-            f"- Agricultural area estimation using satellite imagery\n"
-            f"- Small area estimation using spatial covariates\n"
-            f"- SDG geospatial indicator monitoring\n\n"
-            f"NSSTA offers a **GIS for Official Statistics** programme that I recommend given your current gap. "
-            f"The iGOT platform also has an introductory GIS course."
+            f"Here is an explanation of a fundamental statistical concept: **Standard Deviation & Variance** in Survey Estimation:\n\n"
+            f"• **Variance ($\sigma^2$)**: Measures the average squared dispersion of survey values around the sample mean.\n"
+            f"• **Standard Error (SE)**: The standard deviation of a sampling distribution (e.g., $SE = \sigma / \sqrt{n}$). It quantifies the precision of our survey estimates.\n"
+            f"• **Confidence Interval (95%)**: $\hat{\mu} \pm 1.96 \times SE$. Tells us that in 95 out of 100 repeated samples, the calculated interval covers the true population parameter.\n\n"
+            f"In MoSPI surveys, the **Coefficient of Variation (CV = SE / Mean × 100%)** is the official metric used to assess the reliability of published estimates."
+        )
+    elif any(w in msg_lower for w in ["cpi", "inflation", "price", "index", "wpi"]):
+        return (
+            f"**Consumer Price Index (CPI) in India:**\n\n"
+            f"• **Base Year**: Currently 2012=100 (compiled by NSO, MoSPI).\n"
+            f"• **Scope**: Measures changes over time in the price level of consumer goods and services purchased by households.\n"
+            f"• **Formula**: Modified Laspeyres formula using weights derived from Household Consumer Expenditure Survey (HCES).\n"
+            f"• **Series**: Published monthly for Rural, Urban, and Combined at national and state levels."
+        )
+    elif any(w in msg_lower for w in ["gdp", "national accounts", "gross domestic product", "gva"]):
+        return (
+            f"**National Accounts & GDP Measurement:**\n\n"
+            f"• **GDP (Gross Domestic Product)**: Total monetary value of all finished goods and services produced within a country in a specific period.\n"
+            f"• **GVA (Gross Value Added)**: $GVA = GDP - \text{Net Product Taxes (Taxes - Subsidies)}$.\n"
+            f"• **Three Approaches**: Production (Output) Approach, Expenditure Approach ($C + I + G + NX$), and Income Approach.\n"
+            f"• **Base Year**: 2011-12 (compiled quarterly and annually by National Accounts Division, MoSPI)."
+        )
+    elif any(w in msg_lower for w in ["gis", "geographic", "spatial", "remote sensing"]):
+        return (
+            f"**GIS (Geographic Information Systems) in Official Statistics:**\n\n"
+            f"• **Applications in NSO**:\n"
+            f"  - Delineation and digital mapping of Census Enumeration Blocks\n"
+            f"  - Agricultural area and crop yield estimation with satellite remote sensing\n"
+            f"  - Small Area Estimation (SAE) combining survey microdata with geospatial covariates\n"
+            f"  - Geospatial SDG Indicator monitoring\n\n"
+            f"**Recommended training**: NSSTA's *GIS for Official Statistics* and iGOT's *Geospatial Data Basics*."
         )
     elif any(w in msg_lower for w in ["quiz", "practice", "question", "test"]):
         return (
-            f"I can help you practice! Here's a quick question on **Sampling**:\n\n"
-            f"**Q: Which sampling method ensures proportional representation of all subgroups?**\n"
-            f"A) Cluster Sampling\n"
-            f"B) Systematic Sampling\n"
-            f"C) Stratified Sampling ✓\n"
-            f"D) Convenience Sampling\n\n"
-            f"**Explanation**: Stratified sampling divides the population into homogeneous strata and samples proportionally from each, guaranteeing representation of all groups.\n\n"
-            f"To get a full AI-generated quiz, go to **Assessments** → take a diagnostic, or ask a trainer to upload material in the **AI Quiz Generator**."
+            f"Here is a quick practice question on **Official Statistics**:\n\n"
+            f"**Q: Which formula is primarily used by NSO to compile the Consumer Price Index (CPI)?**\n"
+            f"A) Paasche's Formula\n"
+            f"B) Modified Laspeyres Formula ✓\n"
+            f"C) Fisher's Ideal Index\n"
+            f"D) Marshall-Edgeworth Index\n\n"
+            f"**Explanation**: The NSO uses the Modified Laspeyres formula with base year 2012=100 and weights derived from the Consumer Expenditure Survey.\n\n"
+            f"To generate a full 10-question assessment from your study materials, open the **AI Quiz Generator** in the sidebar!"
         )
     elif any(w in msg_lower for w in ["hello", "hi", "hey", "namaste"]):
         return (
-            f"Namaste {name}! 🙏 I'm **StatWise AI**, your personalized learning assistant.\n\n"
+            f"Namaste {name}! 🙏 I'm **StatWise AI**, your learning assistant for India's Official Statistical System.\n\n"
             f"I can help you with:\n"
-            f"- Understanding your skill gaps and what to learn next\n"
-            f"- Explaining statistical concepts\n"
-            f"- Recommending iGOT and NSSTA courses\n"
-            f"- Generating practice questions\n"
-            f"- Summarizing learning material\n\n"
-            f"What would you like to explore today?"
+            f"- Explaining statistical concepts (Sampling, CPI, GDP, Estimation, Regression)\n"
+            f"- Understanding your competency gaps and recommended courses\n"
+            f"- Providing practice MCQs with explanations\n"
+            f"- Guiding your learning path across iGOT Karmayogi and NSSTA\n\n"
+            f"What would you like to learn about today?"
         )
     else:
         return (
-            f"That's a great question! As your StatWise AI assistant, I'm here to support your learning journey "
-            f"in India's Official Statistical System.\n\n"
-            f"Based on your profile, your most urgent development area is **{top_gap}**. "
-            f"I'd suggest checking the **Learning Path** section for a structured roadmap tailored to your role.\n\n"
-            f"You can also ask me to:\n"
-            f"- Explain any statistical concept\n"
-            f"- Recommend specific courses\n"
-            f"- Generate practice questions\n"
-            f"- Summarize your competency status"
+            f"Here is what I can do to assist your statistical learning journey, {name}:\n\n"
+            f"1. **Statistical Concepts**: Ask me to explain concepts like *Stratified Sampling*, *Standard Error*, *CPI Calculation*, or *National Accounts*.\n"
+            f"2. **Competency Guidance**: Your current top development priority is **{top_gap}** (target: 80%).\n"
+            f"3. **Course Pathways**: I can recommend courses from iGOT Karmayogi and NSSTA to bridge your gaps.\n"
+            f"4. **Practice Questions**: Ask me for practice MCQs on any topic.\n\n"
+            f"Try asking: *'Explain Stratified Sampling'* or *'How is CPI calculated in India?'*"
         )
