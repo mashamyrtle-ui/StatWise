@@ -534,27 +534,27 @@ def _mock_assistant_response(user_message: str, user_context: dict) -> str:
         )
     elif any(w in msg_lower for w in ["concept", "statistic", "variance", "mean", "median", "standard deviation", "regression", "hypothesis", "p-value"]):
         return (
-            f"Here is an explanation of a fundamental statistical concept: **Standard Deviation & Variance** in Survey Estimation:\n\n"
-            f"• **Variance ($\sigma^2$)**: Measures the average squared dispersion of survey values around the sample mean.\n"
-            f"• **Standard Error (SE)**: The standard deviation of a sampling distribution (e.g., $SE = \sigma / \sqrt{n}$). It quantifies the precision of our survey estimates.\n"
-            f"• **Confidence Interval (95%)**: $\hat{\mu} \pm 1.96 \times SE$. Tells us that in 95 out of 100 repeated samples, the calculated interval covers the true population parameter.\n\n"
-            f"In MoSPI surveys, the **Coefficient of Variation (CV = SE / Mean × 100%)** is the official metric used to assess the reliability of published estimates."
+            "Here is an explanation of a fundamental statistical concept: **Standard Deviation & Variance** in Survey Estimation:\n\n"
+            "• **Variance (s^2)**: Measures the average squared dispersion of survey values around the sample mean.\n"
+            "• **Standard Error (SE)**: The standard deviation of a sampling distribution (e.g., SE = s / sqrt(n)). It quantifies the precision of our survey estimates.\n"
+            "• **Confidence Interval (95%)**: Mean +/- 1.96 * SE. Tells us that in 95 out of 100 repeated samples, the calculated interval covers the true population parameter.\n\n"
+            "In MoSPI surveys, the **Coefficient of Variation (CV = SE / Mean * 100%)** is the official metric used to assess the reliability of published estimates."
         )
     elif any(w in msg_lower for w in ["cpi", "inflation", "price", "index", "wpi"]):
         return (
-            f"**Consumer Price Index (CPI) in India:**\n\n"
-            f"• **Base Year**: Currently 2012=100 (compiled by NSO, MoSPI).\n"
-            f"• **Scope**: Measures changes over time in the price level of consumer goods and services purchased by households.\n"
-            f"• **Formula**: Modified Laspeyres formula using weights derived from Household Consumer Expenditure Survey (HCES).\n"
-            f"• **Series**: Published monthly for Rural, Urban, and Combined at national and state levels."
+            "**Consumer Price Index (CPI) in India:**\n\n"
+            "• **Base Year**: Currently 2012=100 (compiled by NSO, MoSPI).\n"
+            "• **Scope**: Measures changes over time in the price level of consumer goods and services purchased by households.\n"
+            "• **Formula**: Modified Laspeyres formula using weights derived from Household Consumer Expenditure Survey (HCES).\n"
+            "• **Series**: Published monthly for Rural, Urban, and Combined at national and state levels."
         )
     elif any(w in msg_lower for w in ["gdp", "national accounts", "gross domestic product", "gva"]):
         return (
-            f"**National Accounts & GDP Measurement:**\n\n"
-            f"• **GDP (Gross Domestic Product)**: Total monetary value of all finished goods and services produced within a country in a specific period.\n"
-            f"• **GVA (Gross Value Added)**: $GVA = GDP - \text{Net Product Taxes (Taxes - Subsidies)}$.\n"
-            f"• **Three Approaches**: Production (Output) Approach, Expenditure Approach ($C + I + G + NX$), and Income Approach.\n"
-            f"• **Base Year**: 2011-12 (compiled quarterly and annually by National Accounts Division, MoSPI)."
+            "**National Accounts & GDP Measurement:**\n\n"
+            "• **GDP (Gross Domestic Product)**: Total monetary value of all finished goods and services produced within a country in a specific period.\n"
+            "• **GVA (Gross Value Added)**: GVA = GDP - Net Product Taxes (Taxes - Subsidies).\n"
+            "• **Three Approaches**: Production (Output) Approach, Expenditure Approach (C + I + G + NX), and Income Approach.\n"
+            "• **Base Year**: 2011-12 (compiled quarterly and annually by National Accounts Division, MoSPI)."
         )
     elif any(w in msg_lower for w in ["gis", "geographic", "spatial", "remote sensing"]):
         return (
