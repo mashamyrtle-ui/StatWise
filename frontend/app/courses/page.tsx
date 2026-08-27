@@ -1,40 +1,33 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { coursesApi, recommendationsApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import * as store from '@/lib/store';
 import { cn, getProviderColor, getDifficultyColor } from '@/lib/utils';
-import { BookOpen, Search, Filter, Star, Clock, Tag, CheckCircle2 } from 'lucide-react';
+import { BookOpen, Search, Star, Clock, CheckCircle2 } from 'lucide-react';
 
 const PROVIDERS = ['All', 'iGOT Karmayogi', 'NSSTA', 'Other Govt Training'];
 const DIFFICULTIES = ['All', 'Beginner', 'Intermediate', 'Advanced'];
 
 export default function CoursesPage() {
   const { user } = useAuth();
-  const [courses, setCourses] = useState<any[]>([]);
-  const [recommendations, setRecommendations] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [recommendations, setRecommendations] = useState<store.Recommendation[]>([]);
+  const [enrolledCourses, setEnrolledCourses] = useState<Set<string>>(new Set());
+  const [enrolling, setEnrolling] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [provider, setProvider] = useState('All');
   const [difficulty, setDifficulty] = useState('All');
-  const [enrolling, setEnrolling] = useState<number | null>(null);
-  const [enrolled, setEnrolled] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    const load = async () => {
-      const [cRes, rRes] = await Promise.all([
-        coursesApi.list(),
-        user ? recommendationsApi.get(user.id) : Promise.resolve({ data: [] }),
-      ]);
-      setCourses(cRes.data);
-      setRecommendations(rRes.data);
-      setLoading(false);
-    };
-    load().catch(console.error);
+    if (!user) return;
+    setRecommendations(store.getRecommendations(user.id));
+    setEnrolledCourses(new Set(store.getEnrolledCourses(user.id)));
   }, [user]);
 
-  const recByCoure: Record<number, any> = {};
-  recommendations.forEach(r => { recByCoure[r.course_id] = r; });
+  const courses = store.COURSES_CATALOGUE;
+
+  const recByCourse: Record<string, store.Recommendation> = {};
+  recommendations.forEach(r => { recByCourse[r.course_id] = r; });
 
   const filtered = courses.filter(c => {
     if (provider !== 'All' && c.provider !== provider) return false;
@@ -43,23 +36,13 @@ export default function CoursesPage() {
     return true;
   });
 
-  const handleEnroll = async (courseId: number) => {
+  const handleEnroll = (courseId: string) => {
+    if (!user) return;
     setEnrolling(courseId);
-    try {
-      await coursesApi.enroll(courseId);
-      setEnrolled(prev => new Set(Array.from(prev).concat([courseId])));
-    } catch (e) { }
-    setEnrolling(null);
+    store.enrollCourse(user.id, courseId);
+    setEnrolledCourses(prev => new Set([...Array.from(prev), courseId]));
+    setTimeout(() => setEnrolling(null), 400);
   };
-
-  if (loading) return (
-    <div className="page-container">
-      <div className="h-8 skeleton w-48 mb-8" />
-      <div className="grid grid-cols-3 gap-4">
-        {[...Array(6)].map((_, i) => <div key={i} className="h-48 skeleton rounded-xl" />)}
-      </div>
-    </div>
-  );
 
   return (
     <div className="page-container animate-fade-in">
@@ -77,13 +60,8 @@ export default function CoursesPage() {
       <div className="flex flex-wrap gap-3 mb-6">
         <div className="relative flex-1 min-w-64">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search courses..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-navy-500"
-          />
+          <input type="text" placeholder="Search courses..." value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-navy-500" />
         </div>
         <div className="flex gap-2">
           {PROVIDERS.map(p => (
@@ -105,17 +83,14 @@ export default function CoursesPage() {
         </div>
       </div>
 
-      {/* Courses grid */}
+      {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map(course => {
-          const rec = recByCoure[course.id];
-          const isEnrolled = enrolled.has(course.id);
+          const rec = recByCourse[course.id];
+          const isEnrolled = enrolledCourses.has(course.id);
 
           return (
-            <div key={course.id} className={cn(
-              'gov-card p-5 flex flex-col gap-3',
-              rec && 'ring-2 ring-navy-300 ring-offset-1'
-            )}>
+            <div key={course.id} className={cn('gov-card p-5 flex flex-col gap-3', rec && 'ring-2 ring-navy-300 ring-offset-1')}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex gap-2 flex-wrap">
                   <span className={cn('text-xs font-medium px-2 py-0.5 rounded border', getProviderColor(course.provider))}>
@@ -146,16 +121,10 @@ export default function CoursesPage() {
                   <span className="flex items-center gap-1"><Clock size={12} /> {course.duration_hours}h</span>
                   <span className="flex items-center gap-1"><Star size={12} className="text-amber-400" /> {course.rating}</span>
                 </div>
-                <button
-                  onClick={() => handleEnroll(course.id)}
+                <button onClick={() => !isEnrolled && handleEnroll(course.id)}
                   disabled={isEnrolled || enrolling === course.id}
-                  className={cn(
-                    'text-xs font-medium px-3 py-1.5 rounded-lg transition-all',
-                    isEnrolled
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
-                      : 'bg-navy-700 hover:bg-navy-800 text-white'
-                  )}
-                >
+                  className={cn('text-xs font-medium px-3 py-1.5 rounded-lg transition-all',
+                    isEnrolled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default' : 'bg-navy-700 hover:bg-navy-800 text-white')}>
                   {enrolling === course.id ? '...' : isEnrolled ? (
                     <span className="flex items-center gap-1"><CheckCircle2 size={12} /> Enrolled</span>
                   ) : 'Enroll'}

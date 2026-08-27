@@ -2,30 +2,62 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { competenciesApi } from '@/lib/api';
+import * as store from '@/lib/store';
 import { getGapColor, getGapBarColor, cn } from '@/lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { AlertTriangle, CheckCircle2, ArrowRight, Info } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ArrowRight, Info, ClipboardList } from 'lucide-react';
 import Link from 'next/link';
 
 export default function SkillGapPage() {
   const { user } = useAuth();
-  const [gaps, setGaps] = useState<any>(null);
+  const [gaps, setGaps] = useState<store.SkillGapResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
-    competenciesApi.getSkillGaps(user.id)
-      .then(r => setGaps(r.data))
-      .finally(() => setLoading(false));
+    setGaps(store.getSkillGaps(user.id));
+    setLoading(false);
   }, [user]);
 
-  const gapItems = gaps?.gaps || [];
-  const withGaps = gapItems.filter((g: any) => g.gap > 0);
-  const noGaps = gapItems.filter((g: any) => g.gap <= 0);
+  const assessed = user?.assessmentCompleted ?? false;
 
-  const chartData = gapItems.slice(0, 10).map((g: any) => ({
+  if (loading) return (
+    <div className="page-container">
+      <div className="h-8 skeleton w-48 mb-8" />
+      <div className="h-72 skeleton rounded-xl mb-6" />
+      <div className="space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="h-16 skeleton rounded-xl" />)}</div>
+    </div>
+  );
+
+  if (!assessed) {
+    return (
+      <div className="page-container animate-fade-in">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <AlertTriangle size={22} className="text-red-500" /> Skill Gap Analysis
+          </h1>
+        </div>
+        <div className="gov-card p-12 text-center max-w-xl mx-auto">
+          <AlertTriangle size={36} className="text-slate-300 mx-auto mb-4" />
+          <h2 className="text-lg font-bold text-slate-700 mb-2">Complete your assessment to identify your skill gaps.</h2>
+          <p className="text-slate-500 text-sm mb-6">
+            Your skill gap analysis will be generated instantly after completing the diagnostic assessment.
+          </p>
+          <Link href="/assessments"
+            className="inline-flex items-center gap-2 bg-navy-700 hover:bg-navy-800 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors">
+            <ClipboardList size={16} /> Start Assessment
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const gapItems = gaps?.gaps || [];
+  const withGaps = gapItems.filter(g => g.gap > 0);
+  const noGaps = gapItems.filter(g => g.gap <= 0);
+
+  const chartData = gapItems.slice(0, 10).map(g => ({
     name: g.competency_name.split(' ').slice(0, 2).join(' '),
     current: Math.round(g.current_percentage),
     required: Math.round(g.required_percentage),
@@ -36,14 +68,6 @@ export default function SkillGapPage() {
   const GAP_COLORS: Record<string, string> = {
     High: '#ef4444', Medium: '#f59e0b', Low: '#3b82f6', None: '#10b981',
   };
-
-  if (loading) return (
-    <div className="page-container">
-      <div className="h-8 skeleton w-48 mb-8" />
-      <div className="h-72 skeleton rounded-xl mb-6" />
-      <div className="space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="h-16 skeleton rounded-xl" />)}</div>
-    </div>
-  );
 
   return (
     <div className="page-container animate-fade-in">
@@ -56,7 +80,7 @@ export default function SkillGapPage() {
         </p>
       </div>
 
-      {/* Summary */}
+      {/* Summary counts */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
           { label: 'High Priority', count: gaps?.high_priority_count ?? 0, color: 'text-red-600 bg-red-50 border-red-200' },
@@ -70,7 +94,6 @@ export default function SkillGapPage() {
         ))}
       </div>
 
-      {/* Summary text */}
       {gaps?.summary && (
         <div className="gov-card p-4 mb-6 flex items-start gap-3">
           <Info size={18} className="text-navy-700 flex-shrink-0 mt-0.5" />
@@ -86,12 +109,10 @@ export default function SkillGapPage() {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" interval={0} height={55} />
             <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-            <Tooltip
-              formatter={(val: any, name: string) => [`${val}%`, name === 'current' ? 'Current' : 'Required']}
-            />
+            <Tooltip formatter={(val: any, name: string) => [`${val}%`, name === 'current' ? 'Current' : 'Required']} />
             <Bar dataKey="required" fill="#e2e8f0" radius={[4, 4, 0, 0]} name="Required" maxBarSize={22} />
             <Bar dataKey="current" radius={[4, 4, 0, 0]} name="Current" maxBarSize={22}>
-              {chartData.map((entry: { gapLabel: string }, index: number) => (
+              {chartData.map((entry, index) => (
                 <Cell key={index} fill={GAP_COLORS[entry.gapLabel] || '#94a3b8'} />
               ))}
             </Bar>
@@ -112,12 +133,10 @@ export default function SkillGapPage() {
           <h2 className="section-header">Gaps by Competency</h2>
         </div>
         <div className="divide-y divide-slate-50">
-          {withGaps.map((g: any) => (
+          {withGaps.map(g => (
             <div key={g.competency_id} className="px-6 py-4 hover:bg-slate-50 transition-colors">
-              <div
-                className="flex items-center gap-4 cursor-pointer"
-                onClick={() => setExpanded(expanded === g.competency_id ? null : g.competency_id)}
-              >
+              <div className="flex items-center gap-4 cursor-pointer"
+                onClick={() => setExpanded(expanded === g.competency_id ? null : g.competency_id)}>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-semibold text-slate-800">{g.competency_name}</span>
@@ -156,7 +175,7 @@ export default function SkillGapPage() {
               <p className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">
                 <CheckCircle2 size={12} className="text-emerald-500" /> Met Requirements
               </p>
-              {noGaps.map((g: any) => (
+              {noGaps.map(g => (
                 <div key={g.competency_id} className="flex items-center gap-2 py-1">
                   <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
                   <span className="text-sm text-slate-600">{g.competency_name}</span>
@@ -169,10 +188,8 @@ export default function SkillGapPage() {
       </div>
 
       <div className="flex justify-end">
-        <Link
-          href="/courses"
-          className="inline-flex items-center gap-2 bg-navy-700 hover:bg-navy-800 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors"
-        >
+        <Link href="/courses"
+          className="inline-flex items-center gap-2 bg-navy-700 hover:bg-navy-800 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors">
           View Recommended Courses <ArrowRight size={15} />
         </Link>
       </div>
