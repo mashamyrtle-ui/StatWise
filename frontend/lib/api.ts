@@ -36,6 +36,18 @@ api.interceptors.response.use(
 export const authApi = {
   login: (email: string, password: string) =>
     api.post('/api/auth/login', { email, password }),
+  register: (data: {
+    name: string;
+    email: string;
+    password: string;
+    role?: string;
+    designation?: string;
+    department_id?: number;
+    years_experience?: number;
+    education?: string;
+    career_goal?: string;
+  }) => api.post('/api/auth/register', data),
+  getDepartments: () => api.get('/api/auth/departments'),
 };
 
 // ─── Users ───────────────────────────────────────────────────────────────────

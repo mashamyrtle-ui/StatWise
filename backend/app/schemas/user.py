@@ -58,7 +58,21 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: Optional[UserRole] = UserRole.employee
+    designation: Optional[str] = "Statistical Officer"
+    department_id: Optional[int] = 1
+    years_experience: Optional[float] = 1.0
+    education: Optional[str] = "Graduate in Statistics / Economics"
+    career_goal: Optional[str] = "Enhance statistical competencies for official reporting"
+    employee_id: Optional[str] = None
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
