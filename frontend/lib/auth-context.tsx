@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import * as store from '@/lib/store';
+import { AuthService } from '@/lib/auth-service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,12 +20,20 @@ export interface User {
   career_goal: string;
   current_assignment: string;
   assessmentCompleted: boolean;
+  onboardingCompleted: boolean;
+  faceEnrolled: boolean;
+  faceTemplate?: string;
+  faceEnrolledAt?: string;
+  enrolledFaceThumbnail?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null; // kept for API compatibility (AI assistant, quiz generator)
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<string>;
+  loginWithFace: (officerId: string, liveFaceTemplate?: string, options?: { simulateFailure?: boolean }) => Promise<string>;
+  enrollFace: (template: string, thumbnail?: string) => Promise<void>;
+  refreshUser: () => void;
   register: (data: any) => Promise<void>;
   logout: () => void;
   switchDemoUser: (userId: string) => void;
@@ -54,6 +63,11 @@ function recordToUser(record: store.UserRecord): User {
     career_goal: record.profile.career_goal,
     current_assignment: record.profile.current_assignment,
     assessmentCompleted: record.assessmentCompleted,
+    onboardingCompleted: record.onboardingCompleted ?? record.assessmentCompleted,
+    faceEnrolled: record.faceEnrolled ?? record.profile.faceEnrolled ?? false,
+    faceTemplate: record.faceTemplate ?? record.profile.faceTemplate,
+    faceEnrolledAt: record.faceEnrolledAt ?? record.profile.faceEnrolledAt,
+    enrolledFaceThumbnail: record.enrolledFaceThumbnail ?? record.profile.enrolledFaceThumbnail,
   };
 }
 
@@ -75,19 +89,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const record = store.loginUser(email, password);
-    setUser(recordToUser(record));
+  const refreshUser = useCallback(() => {
+    const record = store.getCurrentUser();
+    if (record) setUser(recordToUser(record));
   }, []);
+
+  const login = useCallback(async (email: string, password: string): Promise<string> => {
+    const res = await AuthService.loginWithPassword(email, password);
+    setUser(recordToUser(res.user));
+    return res.redirectUrl;
+  }, []);
+
+  const loginWithFace = useCallback(async (officerId: string, liveFaceTemplate?: string, options?: { simulateFailure?: boolean }): Promise<string> => {
+    const res = await AuthService.loginWithFace(officerId, liveFaceTemplate, options);
+    setUser(recordToUser(res.user));
+    return res.redirectUrl;
+  }, []);
+
+  const enrollFace = useCallback(async (template: string, thumbnail?: string) => {
+    if (!user) throw new Error('No authenticated user session found to enroll face.');
+    const updated = await AuthService.enrollFace(user.id, template, thumbnail);
+    setUser(recordToUser(updated));
+  }, [user]);
 
   const register = useCallback(async (data: any) => {
     const record = store.registerUser({
       name: data.name,
       email: data.email,
       password: data.password,
-      role: data.role || 'employee',
+      employee_id: data.employee_id || data.employeeId,
+      // role is intentionally omitted — store always assigns 'employee' for self-registration
       designation: data.designation || 'Statistical Officer',
-      department: data.department || data.department_name || 'Department of Statistics',
+      department: data.department || data.department_name || 'National Statistical Office',
       years_experience: Number(data.years_experience) || 0,
       education: data.education || '',
       current_assignment: data.current_assignment || '',
@@ -112,8 +145,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const record = store.getCurrentUser();
     if (record) {
       setUser(recordToUser(record));
-      // Force page reload to refresh all data
-      window.location.href = '/dashboard';
+      // Route to the correct role-based destination
+      const role = record.profile.role;
+      const isOnboarded = record.onboardingCompleted ?? record.assessmentCompleted ?? false;
+      let dest = '/dashboard';
+      if (role === 'admin') dest = '/admin';
+      else if (role === 'trainer') dest = '/trainer';
+      else if (!isOnboarded) dest = '/onboarding';
+      window.location.href = dest;
     }
   }, []);
 
@@ -126,7 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, switchDemoUser, resetUserData, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, loginWithFace, enrollFace, refreshUser, register, logout, switchDemoUser, resetUserData, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

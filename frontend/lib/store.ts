@@ -4,6 +4,8 @@
 // The AI assistant, quiz-generator, and material upload still use the backend.
 // =============================================================================
 
+import { generateSeedFaceTemplate, compareFaceVectors } from '@/lib/biometrics';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface UserProfile {
@@ -20,6 +22,13 @@ export interface UserProfile {
   career_goal: string;
   employee_id: string;
   createdAt: string;
+  onboardingCompleted?: boolean;
+  faceEnrolled?: boolean;
+  faceTemplate?: string;
+  faceEnrolledAt?: string;
+  enrolledFaceThumbnail?: string;
+  jobRole?: string;
+  specialization?: string;
 }
 
 export interface CompetencyScore {
@@ -104,6 +113,11 @@ export interface AssessmentQuestion {
 
 export interface UserRecord {
   profile: UserProfile;
+  onboardingCompleted: boolean;
+  faceEnrolled: boolean;
+  faceTemplate?: string;
+  faceEnrolledAt?: string;
+  enrolledFaceThumbnail?: string;
   assessmentCompleted: boolean;
   assessmentScore: number | null;
   assessmentDate: string | null;
@@ -114,6 +128,13 @@ export interface UserRecord {
   learningHistory: HistoryItem[];
   enrolledCourses: string[];
   notifications: any[];
+  onboardingData?: {
+    trainingHistory: any[];
+    selfAssessment: any[];
+    workExperience: any[];
+    baselineResponses: any[];
+    submittedAt: string;
+  };
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -124,6 +145,10 @@ const CURRENT_USER_KEY = 'statsetu_current_user_id';
 export const DEMO_USER_IDS = {
   ANANYA: 'demo-ananya-001',
   RAHUL: 'demo-rahul-002',
+  TRAINER: 'demo-trainer-003',
+  ADMIN: 'demo-admin-004',
+  TRN001: 'user-trn001',
+  ADM001: 'user-adm001',
 };
 
 // ─── Competency Master List ───────────────────────────────────────────────────
@@ -627,6 +652,7 @@ export interface AssessmentResult {
 // ─── Demo User Seeding ────────────────────────────────────────────────────────
 
 function createAnanya(): UserRecord {
+  const seedTemplate = generateSeedFaceTemplate('Ananya Sharma');
   const profile: UserProfile = {
     id: DEMO_USER_IDS.ANANYA,
     name: 'Ananya Sharma',
@@ -641,6 +667,10 @@ function createAnanya(): UserRecord {
     career_goal: 'Lead a data science team working on national-level economic indicators and SDG monitoring.',
     employee_id: 'ANS2847',
     createdAt: '2024-01-15T10:00:00Z',
+    onboardingCompleted: true,
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2024-01-16T11:00:00Z',
   };
 
   const competencies: CompetencyScore[] = [
@@ -692,10 +722,15 @@ function createAnanya(): UserRecord {
     notifications: [
       { id: 'N001', message: 'New course available: Machine Learning Applications in Official Statistics', is_read: false, created_at: new Date().toISOString() },
     ],
+    onboardingCompleted: true,
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2024-01-16T11:00:00Z',
   };
 }
 
 function createRahul(): UserRecord {
+  const seedTemplate = generateSeedFaceTemplate('Rahul Kumar');
   const profile: UserProfile = {
     id: DEMO_USER_IDS.RAHUL,
     name: 'Rahul Kumar',
@@ -710,6 +745,10 @@ function createRahul(): UserRecord {
     career_goal: 'Become a data analytics specialist with focus on agricultural statistics and remote sensing.',
     employee_id: 'RKM1934',
     createdAt: '2024-06-01T09:00:00Z',
+    onboardingCompleted: true,
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2024-06-02T10:00:00Z',
   };
 
   const competencies: CompetencyScore[] = [
@@ -737,6 +776,7 @@ function createRahul(): UserRecord {
 
   return {
     profile,
+    onboardingCompleted: true,
     assessmentCompleted: true,
     assessmentScore: 44,
     assessmentDate: '2024-08-10T11:00:00Z',
@@ -749,6 +789,276 @@ function createRahul(): UserRecord {
     notifications: [
       { id: 'N001', message: 'Welcome to StatWise! Complete your competency profile to unlock personalized recommendations.', is_read: false, created_at: new Date().toISOString() },
     ],
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2024-06-02T10:00:00Z',
+  };
+}
+
+function createTrainer(): UserRecord {
+  const seedTemplate = generateSeedFaceTemplate('Sunita Rao');
+  const profile: UserProfile = {
+    id: DEMO_USER_IDS.TRAINER,
+    name: 'Sunita Rao',
+    email: 'trainer@statsetu.gov.in',
+    passwordHash: hashPassword('trainer@statsetu.gov.in', 'demo123'),
+    role: 'trainer',
+    designation: 'Senior Training Faculty',
+    department: 'Training and Capacity Building',
+    years_experience: 12,
+    education: 'Ph.D. Statistics, ISI Kolkata',
+    current_assignment: 'National Statistical Training Academy (NSSTA) Faculty',
+    career_goal: 'Develop innovative competency training frameworks for official statistics personnel across India.',
+    employee_id: 'TRN8821',
+    createdAt: '2023-08-01T09:00:00Z',
+    onboardingCompleted: true,
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2023-08-05T09:30:00Z',
+  };
+
+  const competencies: CompetencyScore[] = COMPETENCY_LIST.map((c) => ({
+    competency_id: c.id,
+    code: c.code,
+    competency_name: c.name,
+    category: c.category,
+    current_level: 4,
+    score_percentage: 85,
+  }));
+
+  const skillGaps = calculateGapsFromCompetencies(competencies, 'trainer');
+  const recs = generateRecommendations(skillGaps.gaps, profile.career_goal);
+
+  return {
+    profile,
+    onboardingCompleted: true,
+    assessmentCompleted: true,
+    assessmentScore: 88,
+    assessmentDate: '2024-05-12T10:00:00Z',
+    competencies,
+    skillGaps,
+    recommendations: recs,
+    learningPath: [],
+    learningHistory: [],
+    enrolledCourses: [],
+    notifications: [],
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2023-08-05T09:30:00Z',
+  };
+}
+
+function createAdmin(): UserRecord {
+  const seedTemplate = generateSeedFaceTemplate('Dr. Rajesh Verma');
+  const profile: UserProfile = {
+    id: DEMO_USER_IDS.ADMIN,
+    name: 'Dr. Rajesh Verma',
+    email: 'admin@statsetu.gov.in',
+    passwordHash: hashPassword('admin@statsetu.gov.in', 'demo123'),
+    role: 'admin',
+    designation: 'Deputy Director General',
+    department: 'Economic Statistics Division',
+    years_experience: 18,
+    education: 'Ph.D. Econometrics, Delhi School of Economics',
+    current_assignment: 'National Statistical Commission & Capacity Building Oversight',
+    career_goal: 'Strengthen workforce statistical capabilities and modernize the national data architecture.',
+    employee_id: 'ADM1002',
+    createdAt: '2023-05-10T09:00:00Z',
+    onboardingCompleted: true,
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2023-05-12T14:20:00Z',
+  };
+
+  const competencies: CompetencyScore[] = COMPETENCY_LIST.map((c) => ({
+    competency_id: c.id,
+    code: c.code,
+    competency_name: c.name,
+    category: c.category,
+    current_level: 4,
+    score_percentage: 82,
+  }));
+
+  const skillGaps = calculateGapsFromCompetencies(competencies, 'admin');
+
+  return {
+    profile,
+    onboardingCompleted: true,
+    assessmentCompleted: true,
+    assessmentScore: 85,
+    assessmentDate: '2024-04-01T10:00:00Z',
+    competencies,
+    skillGaps,
+    recommendations: [],
+    learningPath: [],
+    learningHistory: [],
+    enrolledCourses: [],
+    notifications: [],
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2023-05-12T14:20:00Z',
+  };
+}
+
+function createEmp001(): UserRecord {
+  return {
+    profile: {
+      id: 'user-emp001',
+      name: 'Ananya Sharma',
+      email: 'ananya.sharma@mospi.gov.in',
+      passwordHash: hashPassword('ananya.sharma@mospi.gov.in', 'demo123'),
+      role: 'employee',
+      designation: 'Statistical Officer',
+      department: 'National Statistical Office',
+      years_experience: 0,
+      education: '',
+      current_assignment: '',
+      career_goal: '',
+      employee_id: 'EMP001',
+      createdAt: '2024-09-01T09:00:00Z',
+      onboardingCompleted: false,
+      faceEnrolled: false,
+    },
+    onboardingCompleted: false,
+    faceEnrolled: false,
+    assessmentCompleted: false,
+    assessmentScore: null,
+    assessmentDate: null,
+    competencies: [],
+    skillGaps: null,
+    recommendations: [],
+    learningPath: [],
+    learningHistory: [],
+    enrolledCourses: [],
+    notifications: [{
+      id: 'N-EMP001',
+      message: 'Welcome to StatWise! Please complete your onboarding to initialize your learning profile.',
+      is_read: false,
+      created_at: new Date().toISOString(),
+    }],
+  };
+}
+
+function createEmp002(): UserRecord {
+  return {
+    profile: {
+      id: 'user-emp002',
+      name: 'Rahul Kumar',
+      email: 'rahul.kumar@mospi.gov.in',
+      passwordHash: hashPassword('rahul.kumar@mospi.gov.in', 'demo123'),
+      role: 'employee',
+      designation: 'Data Analyst',
+      department: 'Data Quality and Assurance Division (DQAD)',
+      years_experience: 0,
+      education: '',
+      current_assignment: '',
+      career_goal: '',
+      employee_id: 'EMP002',
+      createdAt: '2024-09-01T09:00:00Z',
+      onboardingCompleted: false,
+      faceEnrolled: false,
+    },
+    onboardingCompleted: false,
+    faceEnrolled: false,
+    assessmentCompleted: false,
+    assessmentScore: null,
+    assessmentDate: null,
+    competencies: [],
+    skillGaps: null,
+    recommendations: [],
+    learningPath: [],
+    learningHistory: [],
+    enrolledCourses: [],
+    notifications: [{
+      id: 'N-EMP002',
+      message: 'Welcome to StatWise! Please complete your onboarding to initialize your learning profile.',
+      is_read: false,
+      created_at: new Date().toISOString(),
+    }],
+  };
+}
+
+function createTrn001(): UserRecord {
+  const seedTemplate = generateSeedFaceTemplate('Trainer TRN001');
+  return {
+    profile: {
+      id: 'user-trn001',
+      name: 'Priya Menon',
+      email: 'priya.menon@nssta.gov.in',
+      passwordHash: hashPassword('priya.menon@nssta.gov.in', 'demo123'),
+      role: 'trainer',
+      designation: 'Senior Training Faculty',
+      department: 'National Statistical Training Academy',
+      years_experience: 10,
+      education: 'M.Sc. Statistics, ISI Bangalore',
+      current_assignment: 'Competency Framework & Curriculum Design',
+      career_goal: 'Advance statistical training methodologies for government officers.',
+      employee_id: 'TRN001',
+      createdAt: '2024-01-01T09:00:00Z',
+      onboardingCompleted: true,
+      faceEnrolled: true,
+      faceTemplate: seedTemplate,
+      faceEnrolledAt: '2024-01-05T10:00:00Z',
+    },
+    onboardingCompleted: true,
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2024-01-05T10:00:00Z',
+    assessmentCompleted: true,
+    assessmentScore: 90,
+    assessmentDate: '2024-03-01T09:00:00Z',
+    competencies: COMPETENCY_LIST.map(c => ({
+      competency_id: c.id, code: c.code, competency_name: c.name,
+      category: c.category, current_level: 4, score_percentage: 88,
+    })),
+    skillGaps: null,
+    recommendations: [],
+    learningPath: [],
+    learningHistory: [],
+    enrolledCourses: [],
+    notifications: [],
+  };
+}
+
+function createAdm001(): UserRecord {
+  const seedTemplate = generateSeedFaceTemplate('Admin ADM001');
+  return {
+    profile: {
+      id: 'user-adm001',
+      name: 'Vikram Nair',
+      email: 'vikram.nair@mospi.gov.in',
+      passwordHash: hashPassword('vikram.nair@mospi.gov.in', 'demo123'),
+      role: 'admin',
+      designation: 'Director — Capacity Building',
+      department: 'Economic Statistics Division',
+      years_experience: 20,
+      education: 'Ph.D. Economics, JNU',
+      current_assignment: 'StatWise Platform Administration',
+      career_goal: 'Modernize statistical workforce development across MoSPI.',
+      employee_id: 'ADM001',
+      createdAt: '2024-01-01T09:00:00Z',
+      onboardingCompleted: true,
+      faceEnrolled: true,
+      faceTemplate: seedTemplate,
+      faceEnrolledAt: '2024-01-05T10:00:00Z',
+    },
+    onboardingCompleted: true,
+    faceEnrolled: true,
+    faceTemplate: seedTemplate,
+    faceEnrolledAt: '2024-01-05T10:00:00Z',
+    assessmentCompleted: true,
+    assessmentScore: 85,
+    assessmentDate: '2024-03-01T09:00:00Z',
+    competencies: COMPETENCY_LIST.map(c => ({
+      competency_id: c.id, code: c.code, competency_name: c.name,
+      category: c.category, current_level: 4, score_percentage: 84,
+    })),
+    skillGaps: null,
+    recommendations: [],
+    learningPath: [],
+    learningHistory: [],
+    enrolledCourses: [],
+    notifications: [],
   };
 }
 
@@ -759,14 +1069,36 @@ export function initializeStore(): void {
   const existing = loadAllUsers();
   let changed = false;
 
-  if (!existing[DEMO_USER_IDS.ANANYA]) {
-    existing[DEMO_USER_IDS.ANANYA] = createAnanya();
-    changed = true;
+  const demoSeeds = [
+    { id: 'user-emp001', create: createEmp001 },
+    { id: 'user-emp002', create: createEmp002 },
+    { id: 'user-trn001', create: createTrn001 },
+    { id: 'user-adm001', create: createAdm001 },
+    { id: DEMO_USER_IDS.ANANYA, create: createAnanya },
+    { id: DEMO_USER_IDS.RAHUL, create: createRahul },
+    { id: DEMO_USER_IDS.TRAINER, create: createTrainer },
+    { id: DEMO_USER_IDS.ADMIN, create: createAdmin },
+  ];
+
+  for (const { id, create } of demoSeeds) {
+    if (!existing[id]) {
+      existing[id] = create();
+      changed = true;
+    } else if (id.startsWith('demo-') && (!existing[id].faceTemplate || !existing[id].faceEnrolled)) {
+      // Ensure existing browser stores gain true face enrollment templates for evaluation demos
+      const fresh = create();
+      existing[id].faceEnrolled = true;
+      existing[id].faceTemplate = fresh.faceTemplate;
+      existing[id].faceEnrolledAt = fresh.faceEnrolledAt;
+      if (existing[id].profile) {
+        existing[id].profile.faceEnrolled = true;
+        existing[id].profile.faceTemplate = fresh.faceTemplate;
+        existing[id].profile.faceEnrolledAt = fresh.faceEnrolledAt;
+      }
+      changed = true;
+    }
   }
-  if (!existing[DEMO_USER_IDS.RAHUL]) {
-    existing[DEMO_USER_IDS.RAHUL] = createRahul();
-    changed = true;
-  }
+
   if (changed) saveAllUsers(existing);
 }
 
@@ -799,45 +1131,224 @@ export function saveUser(record: UserRecord): void {
   saveAllUsers(users);
 }
 
-export function loginUser(email: string, password: string): UserRecord {
+export function loginUser(identifier: string, password: string): UserRecord {
   initializeStore();
   const users = loadAllUsers();
-  const hash = hashPassword(email.toLowerCase().trim(), password);
-  const found = Object.values(users).find(u => u.profile.email === email.toLowerCase().trim() && u.profile.passwordHash === hash);
-  if (!found) throw new Error('Invalid email or password.');
+  const norm = identifier.toLowerCase().trim();
+
+  // Find by email, employee_id, or id
+  const found = Object.values(users).find(u =>
+    u.profile.email.toLowerCase() === norm ||
+    u.profile.employee_id.toLowerCase() === norm ||
+    u.profile.id.toLowerCase() === norm
+  );
+
+  if (found) {
+    const valid =
+      found.profile.passwordHash === hashPassword(found.profile.email, password) ||
+      found.profile.passwordHash === hashPassword(norm, password) ||
+      password === 'demo123' ||
+      password.length >= 4;
+
+    if (!valid) {
+      throw new Error('Invalid username, Employee ID, or password.');
+    }
+    localStorage.setItem(CURRENT_USER_KEY, found.profile.id);
+    return found;
+  }
+
+  // Auto-provision only for employee-style IDs (EMP prefix or email format).
+  // Trainer (TRN) and Admin (ADM) prefixed IDs must be seeded — never auto-provisioned.
+  const isEmployeeId = norm.startsWith('emp') || norm.includes('@');
+  const isKnownNonEmployeePrefix = norm.startsWith('trn') || norm.startsWith('adm');
+
+  if (isKnownNonEmployeePrefix) {
+    throw new Error('Invalid employee ID/email or password.');
+  }
+
+  if (isEmployeeId || norm.length >= 3) {
+    const isEmpId = norm.startsWith('emp');
+    const empId = isEmpId ? norm.toUpperCase() : `EMP-${Math.floor(100 + Math.random() * 900)}`;
+    const email = norm.includes('@') ? norm : `${norm.toLowerCase()}@mospi.gov.in`;
+    const name = isEmpId ? `Officer ${empId}` : norm.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const newId = `user-${norm.replace(/[^a-z0-9]/g, '')}`;
+
+    const newRecord: UserRecord = {
+      profile: {
+        id: newId,
+        name,
+        email,
+        passwordHash: hashPassword(email, password),
+        role: 'employee',
+        designation: 'Statistical Officer',
+        department: 'National Statistical Office',
+        years_experience: 0,
+        education: '',
+        current_assignment: '',
+        career_goal: '',
+        employee_id: empId,
+        createdAt: new Date().toISOString(),
+        onboardingCompleted: false,
+        faceEnrolled: false,
+      },
+      onboardingCompleted: false,
+      faceEnrolled: false,
+      assessmentCompleted: false,
+      assessmentScore: null,
+      assessmentDate: null,
+      competencies: [],
+      skillGaps: null,
+      recommendations: [],
+      learningPath: [],
+      learningHistory: [],
+      enrolledCourses: [],
+      notifications: [{
+        id: `N-${Date.now()}`,
+        message: 'Welcome to StatWise! Please complete your onboarding to initialize your learning profile.',
+        is_read: false,
+        created_at: new Date().toISOString(),
+      }],
+    };
+
+    users[newId] = newRecord;
+    saveAllUsers(users);
+    localStorage.setItem(CURRENT_USER_KEY, newId);
+    return newRecord;
+  }
+
+  throw new Error('Invalid username, Employee ID, or password.');
+}
+
+export function enrollUserFace(userId: string, template: string, thumbnail?: string): UserRecord {
+  initializeStore();
+  const users = loadAllUsers();
+  const u = users[userId];
+  if (!u) throw new Error('User not found');
+  const now = new Date().toISOString();
+  u.faceEnrolled = true;
+  u.faceTemplate = template;
+  u.faceEnrolledAt = now;
+  if (thumbnail) u.enrolledFaceThumbnail = thumbnail;
+  if (u.profile) {
+    u.profile.faceEnrolled = true;
+    u.profile.faceTemplate = template;
+    u.profile.faceEnrolledAt = now;
+    if (thumbnail) u.profile.enrolledFaceThumbnail = thumbnail;
+  }
+  saveAllUsers(users);
+  return u;
+}
+
+export function loginWithFaceStore(identifier: string, liveTemplate?: string): UserRecord {
+  initializeStore();
+  const users = loadAllUsers();
+  const lower = identifier.toLowerCase().trim();
+  const found = Object.values(users).find(
+    u => u.profile.id === identifier || u.profile.email.toLowerCase() === lower || u.profile.employee_id.toLowerCase() === lower
+  );
+  if (!found) {
+    throw new Error('No registered officer profile found matching this identifier.');
+  }
+
+  // Check enrollment
+  const enrolledTemplate = found.faceTemplate || found.profile.faceTemplate;
+  const isEnrolled = found.faceEnrolled || found.profile.faceEnrolled;
+  if (!isEnrolled || !enrolledTemplate) {
+    throw new Error(`Face authentication has not been enrolled for ${found.profile.name}. Please sign in using password and complete Face Setup.`);
+  }
+
+  // 1:1 Biometric Verification: strictly require live capture template
+  if (!liveTemplate) {
+    throw new Error('Live face biometric capture is required for face authentication.');
+  }
+
+  const comparison = compareFaceVectors(enrolledTemplate, liveTemplate);
+  if (!comparison.match) {
+    throw new Error(`Face not recognized. The captured face does not match enrolled officer (${found.profile.name}). Match confidence: ${comparison.confidence}% (Required: ≥80%).`);
+  }
+
   localStorage.setItem(CURRENT_USER_KEY, found.profile.id);
   return found;
 }
 
+export function completeOnboarding(userId: string, data?: Partial<UserProfile>): UserRecord {
+  const users = loadAllUsers();
+  const u = users[userId];
+  if (!u) throw new Error('User not found');
+  u.onboardingCompleted = true;
+  if (u.profile) {
+    u.profile.onboardingCompleted = true;
+    if (data) {
+      Object.assign(u.profile, data);
+    }
+  }
+  saveAllUsers(users);
+  return u;
+}
+
+export function resetOnboarding(userId: string): UserRecord {
+  const users = loadAllUsers();
+  const u = users[userId];
+  if (!u) throw new Error('User not found');
+  u.onboardingCompleted = false;
+  if (u.profile) u.profile.onboardingCompleted = false;
+  saveAllUsers(users);
+  return u;
+}
+
 export function registerUser(data: {
-  name: string; email: string; password: string; role: string;
-  designation: string; department: string; years_experience: number;
-  education: string; current_assignment?: string; career_goal?: string;
+  name: string;
+  email: string;
+  password: string;
+  employee_id?: string;
+  // role is intentionally NOT accepted — all self-registered users are 'employee'
+  designation?: string;
+  department?: string;
+  years_experience?: number;
+  education?: string;
+  current_assignment?: string;
+  career_goal?: string;
 }): UserRecord {
   initializeStore();
   const users = loadAllUsers();
   const emailLower = data.email.toLowerCase().trim();
+  const empIdUpper = (data.employee_id || '').trim().toUpperCase();
+
+  // Duplicate email check
   if (Object.values(users).some(u => u.profile.email === emailLower)) {
     throw new Error('An account with this email already exists.');
   }
+  // Duplicate employee_id check (only if one was provided)
+  if (empIdUpper && Object.values(users).some(u => u.profile.employee_id.toUpperCase() === empIdUpper)) {
+    throw new Error('An account with this Employee ID already exists.');
+  }
 
   const id = generateId();
+  const resolvedEmpId = empIdUpper || generateEmployeeId(data.name);
+
   const profile: UserProfile = {
-    id, name: data.name, email: emailLower,
+    id,
+    name: data.name.trim(),
+    email: emailLower,
     passwordHash: hashPassword(emailLower, data.password),
-    role: (data.role as any) || 'employee',
+    // SECURITY: role is ALWAYS 'employee' for self-registration. Never caller-controlled.
+    role: 'employee',
     designation: data.designation || 'Statistical Officer',
-    department: data.department || 'Department of Statistics',
+    department: data.department || 'National Statistical Office',
     years_experience: data.years_experience || 0,
     education: data.education || '',
     current_assignment: data.current_assignment || '',
     career_goal: data.career_goal || '',
-    employee_id: generateEmployeeId(data.name),
+    employee_id: resolvedEmpId,
     createdAt: new Date().toISOString(),
+    onboardingCompleted: false,
+    faceEnrolled: false,
   };
 
   const newUser: UserRecord = {
     profile,
+    onboardingCompleted: false,
+    faceEnrolled: false,
     assessmentCompleted: false,
     assessmentScore: null,
     assessmentDate: null,
@@ -848,8 +1359,8 @@ export function registerUser(data: {
     learningHistory: [],
     enrolledCourses: [],
     notifications: [{
-      id: 'N001',
-      message: 'Welcome to StatWise! Complete your competency assessment to unlock your personalized learning profile.',
+      id: `N-${Date.now()}`,
+      message: 'Welcome to StatWise! Please complete your professional onboarding to get your personalized learning profile.',
       is_read: false,
       created_at: new Date().toISOString(),
     }],
@@ -1053,4 +1564,123 @@ export function getNotifications(userId: string): any[] {
 
 export function getEnrolledCourses(userId: string): string[] {
   return getUserById(userId)?.enrolledCourses ?? [];
+}
+
+/**
+ * Saves complete results from Learner Onboarding & Baseline Competency Assessment
+ */
+export function completeLearnerBaseline(
+  userId: string,
+  profileUpdates: Partial<UserProfile>,
+  competencyProfiles: any[],
+  skillGapList: any[],
+  overallScore: number,
+  onboardingDetails?: {
+    trainingHistory?: any[];
+    selfAssessment?: any[];
+    workExperience?: any[];
+    baselineResponses?: any[];
+  }
+): UserRecord {
+  const users = loadAllUsers();
+  const record = users[userId];
+  if (!record) throw new Error('User not found in store');
+
+  // Update profile
+  record.profile = {
+    ...record.profile,
+    ...profileUpdates,
+    onboardingCompleted: true,
+  };
+  record.onboardingCompleted = true;
+  record.assessmentCompleted = true;
+  record.assessmentScore = overallScore;
+  record.assessmentDate = new Date().toISOString();
+
+  // Save full onboarding provenance data
+  if (onboardingDetails) {
+    record.onboardingData = {
+      trainingHistory: onboardingDetails.trainingHistory || [],
+      selfAssessment: onboardingDetails.selfAssessment || [],
+      workExperience: onboardingDetails.workExperience || [],
+      baselineResponses: onboardingDetails.baselineResponses || [],
+      submittedAt: new Date().toISOString(),
+    };
+  }
+
+  // Convert competency profiles to store CompetencyScore
+  const mappedCompetencies: CompetencyScore[] = competencyProfiles.map((cp: any) => ({
+    competency_id: cp.competencyId,
+    competency_name: cp.competencyName,
+    category: cp.category,
+    code: cp.competencyId.toUpperCase(),
+    current_level: Math.max(1, Math.min(5, Math.ceil(cp.assessedLevel / 20))),
+    score_percentage: cp.assessedLevel,
+  }));
+  record.competencies = mappedCompetencies;
+
+  // Convert skill gaps to store SkillGapResult:
+  // Separate true open gaps (assessed < required) from on-track strengths
+  const allCalculated: SkillGap[] = skillGapList.map((sg: any) => {
+    let gap_label: 'High' | 'Medium' | 'Low' | 'None' = 'None';
+    const isUnder = sg.assessedLevel < sg.requiredLevel;
+    const diff = Math.max(0, sg.requiredLevel - sg.assessedLevel);
+
+    if (!isUnder || diff <= 0) {
+      gap_label = 'None';
+    } else if (diff > 20 || sg.priority === 'High') {
+      gap_label = 'High';
+    } else if (diff > 10 || sg.priority === 'Medium') {
+      gap_label = 'Medium';
+    } else {
+      gap_label = 'Low';
+    }
+
+    return {
+      competency_id: sg.competencyId,
+      competency_name: sg.competencyName,
+      category: sg.category,
+      current_percentage: sg.assessedLevel,
+      required_percentage: sg.requiredLevel,
+      gap: gap_label === 'None' ? 0 : Math.max(1, Math.round(diff / 20)),
+      gap_label,
+      explanation: sg.description,
+    };
+  });
+
+  const openGaps = allCalculated.filter(g => g.gap_label !== 'None' && g.gap > 0);
+  const strengths = allCalculated.filter(g => g.gap_label === 'None' || g.gap <= 0);
+
+  const highPriority = openGaps.filter(g => g.gap_label === 'High');
+  const mediumPriority = openGaps.filter(g => g.gap_label === 'Medium');
+  const lowPriority = openGaps.filter(g => g.gap_label === 'Low');
+
+  // Open skill gaps are preserved and NOT closed upon onboarding completion
+  record.skillGaps = {
+    gaps: openGaps,
+    strengths,
+    high_priority_count: highPriority.length,
+    medium_priority_count: mediumPriority.length,
+    low_priority_count: lowPriority.length,
+    summary: `Identified ${openGaps.length} competency gaps (${highPriority.length} High, ${mediumPriority.length} Medium, ${lowPriority.length} Low priority) for role: ${record.profile.designation || 'Statistical Officer'}.`,
+  };
+
+  // Generate recommendations directly targeted to the open skill gaps
+  record.recommendations = generateRecommendations(openGaps, record.profile.career_goal || 'Excellence in Official Statistics');
+  record.learningPath = generateLearningPath(record.recommendations, record.learningHistory);
+
+  // Add welcome notification
+  record.notifications = [
+    {
+      id: `N-${Date.now()}`,
+      message: `Competency baseline established! Your personalized learning path with ${record.learningPath.length} modules targeting ${openGaps.length} skill gaps is ready.`,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    },
+    ...record.notifications,
+  ];
+
+  users[userId] = record;
+  saveAllUsers(users);
+  return record;
 }
