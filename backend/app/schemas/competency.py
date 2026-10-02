@@ -24,6 +24,9 @@ class UserCompetencyOut(BaseModel):
     competency_id: int
     current_level: int
     score_percentage: float
+    confidence: Optional[str] = "Medium"
+    primary_evidence: Optional[str] = None
+    status: Optional[str] = "Verified"
     last_assessed: Optional[datetime] = None
     assessment_count: int
     competency: Optional[CompetencyOut] = None
@@ -48,6 +51,8 @@ class SkillGapItem(BaseModel):
     gap_label: str  # None/Low/Medium/High
     priority: int
     explanation: str
+    confidence: Optional[str] = "Medium"
+    primary_evidence: Optional[str] = None
 
 
 class SkillGapResponse(BaseModel):

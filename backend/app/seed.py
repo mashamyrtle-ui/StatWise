@@ -137,6 +137,13 @@ async def seed_all():
                  education="M.Sc. Statistics, Delhi University",
                  career_goal="Lead a data science team working on national-level economic indicators and SDG monitoring",
                  current_assignment="Annual Survey of Industries — Data Analysis Unit"),
+            # Demo Learner for Face Enrollment Flow
+            dict(employee_id="DEMO-L001", name="Demo Learner", email="learner@statwise.gov.in",
+                 password="demo123", role=UserRole.employee, dept_code="DOS",
+                 designation="Statistical Officer (Trainee)", years_experience=1.0,
+                 education="B.Sc. Statistics",
+                 career_goal="Strengthen field survey methodologies and technical competencies",
+                 current_assignment="Sample Survey Field Operations"),
             # More employees
             dict(employee_id="MOS2024002", name="Rajesh Kumar", email="rajesh@statsetu.gov.in",
                  password="demo123", role=UserRole.employee, dept_code="ESD",

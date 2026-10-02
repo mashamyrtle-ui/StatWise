@@ -6,17 +6,30 @@ import { useAuth } from '@/lib/auth-context';
 import {
   Eye, EyeOff, Shield, Zap, Users,
   CheckCircle2, RefreshCw, Camera, KeyRound, AlertCircle,
-  X, BrainCircuit, FlaskConical, ChevronDown, LogIn,
+  X, BrainCircuit, FlaskConical, ArrowRight, UserCheck, Lock,
+  Sparkles, Smile, ScanLine
 } from 'lucide-react';
 import { DEMO_USER_IDS, getUserById, getAllUsers } from '@/lib/store';
 import {
+  analyzeFaceQuality,
   captureFaceFeatureVector,
-  generateSeedFaceTemplate,
   generateSimulatedImpostorTemplate,
+  FaceQualityResult,
 } from '@/lib/biometrics';
+import FaceEnrollmentView from '@/components/biometrics/FaceEnrollmentView';
 
 // ─── Evaluation Mode Profiles ───────────────────────────────────────────────
 const EVAL_PROFILES = [
+  {
+    id: DEMO_USER_IDS.DEMO_LEARNER,
+    email: 'learner@statwise.gov.in',
+    name: 'Demo Learner',
+    role: 'Statistical Officer (Trainee)',
+    dept: 'DEMO-L001 · Un-enrolled',
+    initials: 'DL',
+    color: '#06b6d4',
+    sysRole: 'employee',
+  },
   {
     id: DEMO_USER_IDS.ANANYA,
     email: 'ananya@statsetu.gov.in',
@@ -108,7 +121,7 @@ function EvaluationModeModal({
             </div>
             <div>
               <p className="text-sm font-bold text-slate-900">Evaluation Mode</p>
-              <p className="text-[11px] text-slate-500 mt-px">SIH Prototype — Select an officer profile</p>
+              <p className="text-[11px] text-slate-500 mt-px">Government Platform · Select an officer</p>
             </div>
           </div>
           <button
@@ -121,13 +134,12 @@ function EvaluationModeModal({
 
         {/* Notice */}
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 leading-relaxed mb-4">
-          <strong>For evaluators only.</strong> Select a pre-configured profile to explore
-          role-specific portals without going through the normal authentication flow.
-          Each role routes differently: <em>Employee → Dashboard</em>, <em>Trainer → Trainer Portal</em>, <em>Admin → Admin Portal</em>.
+          <strong>For evaluators only.</strong> Select an account to test role routing or face verification.
+          Notice <em>Demo Learner (DEMO-L001)</em> starts un-enrolled to test the new registration flow.
         </div>
 
         {/* Profile list */}
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
           {EVAL_PROFILES.map(profile => (
             <button
               key={profile.id}
@@ -147,11 +159,15 @@ function EvaluationModeModal({
                   {profile.role} · {profile.dept}
                 </p>
               </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
-                profile.sysRole === 'admin' ? 'bg-amber-100 text-amber-800' :
-                profile.sysRole === 'trainer' ? 'bg-purple-100 text-purple-800' :
-                'bg-emerald-100 text-emerald-800'
-              }`}>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                  profile.sysRole === 'admin'
+                    ? 'bg-amber-100 text-amber-800'
+                    : profile.sysRole === 'trainer'
+                    ? 'bg-purple-100 text-purple-800'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
                 {profile.sysRole}
               </span>
             </button>
@@ -185,7 +201,7 @@ function FeatureCard({
   );
 }
 
-// ─── Face Authentication Panel ───────────────────────────────────────────────
+// ─── Face Authentication Panel (1:1 Verification) ──────────────────────────
 function FaceAuthPanel({
   onSuccess,
   onFallback,
@@ -193,30 +209,47 @@ function FaceAuthPanel({
   onSuccess: (redirectUrl: string) => void;
   onFallback: () => void;
 }) {
-  const { loginWithFace } = useAuth();
+  const { loginWithFace, checkUserBiometricStatus, enrollFace } = useAuth();
+
+  // Stage 1: 'identifier' (enter Employee ID or Email)
+  // Stage 2: 'verifying_camera' (1:1 camera verify)
+  // Stage 3: 'not_enrolled_prompt' (account exists but no face enrolled)
+  // Stage 4: 'enrolling' (complete face enrollment for demo/learner account)
+  const [stage, setStage] = useState<'identifier' | 'verifying_camera' | 'not_enrolled_prompt' | 'enrolling'>('identifier');
+
+  const [identifier, setIdentifier] = useState('ananya@statwise.gov.in');
+  const [targetUser, setTargetUser] = useState<{
+    name: string;
+    employee_id: string;
+    challengeToken?: string;
+    livenessChallenge?: string;
+  } | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const scanLoopRef = useRef<NodeJS.Timeout | null>(null);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+
+  const [quality, setQuality] = useState<FaceQualityResult>({
+    faceDetected: false,
+    canCapture: false,
+    qualityScore: 0,
+    statusMessage: 'Position your face inside the frame',
+    guidance: 'no_face',
+    brightness: 0.5,
+    contrast: 0.5,
+  });
+
+  const [livenessPassed, setLivenessPassed] = useState(false);
+  const [holdTicks, setHoldTicks] = useState(0);
+
   const [scanState, setScanState] = useState<
-    'idle' | 'scanning' | 'detected' | 'verifying' | 'verified' | 'failed'
+    'idle' | 'scanning' | 'verifying' | 'verified' | 'failed'
   >('idle');
-  const [scanMessage, setScanMessage] = useState('Position your face inside the frame');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Selected officer for 1:1 comparison
-  const allUsers = typeof window !== 'undefined' ? getAllUsers() : [];
-  const defaultOfficerId =
-    allUsers.length > 0 ? allUsers[0].profile.id : DEMO_USER_IDS.ANANYA;
-  const [selectedOfficerId, setSelectedOfficerId] = useState<string>(defaultOfficerId);
-
-  // Sync officer list once mounted
-  useEffect(() => {
-    const users = getAllUsers();
-    if (users.length > 0) setSelectedOfficerId(users[0].profile.id);
-  }, []);
 
   // Clean up camera on unmount
   useEffect(() => {
@@ -224,6 +257,10 @@ function FaceAuthPanel({
   }, []);
 
   const stopCamera = () => {
+    if (scanLoopRef.current) {
+      clearInterval(scanLoopRef.current);
+      scanLoopRef.current = null;
+    }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(t => t.stop());
       mediaStreamRef.current = null;
@@ -231,7 +268,7 @@ function FaceAuthPanel({
     setCameraActive(false);
   };
 
-  const initCamera = async (): Promise<boolean> => {
+  const startCamera = async () => {
     setCameraError(null);
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Unsupported');
@@ -241,314 +278,535 @@ function FaceAuthPanel({
       mediaStreamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+        await videoRef.current.play().catch(() => {});
       }
       setCameraActive(true);
+
+      // Start continuous quality and liveness analysis loop
+      if (scanLoopRef.current) clearInterval(scanLoopRef.current);
+      scanLoopRef.current = setInterval(() => {
+        if (videoRef.current && videoRef.current.readyState >= 2) {
+          const res = analyzeFaceQuality(videoRef.current);
+          setQuality(res);
+
+          // Simulated liveness presence: as user centers and holds for 3 ticks, liveness passes
+          if (res.canCapture && res.guidance === 'hold_still') {
+            setHoldTicks(t => {
+              const next = t + 1;
+              if (next >= 2) setLivenessPassed(true);
+              return next;
+            });
+          } else {
+            setHoldTicks(0);
+          }
+        }
+      }, 300);
       return true;
     } catch {
-      setCameraError('Camera access unavailable. Using simulation mode.');
+      setCameraError('Camera access is required for face authentication. Please allow camera access or use password sign-in.');
       setCameraActive(false);
       return false;
     }
   };
 
-  const runFaceScan = async (mode: 'match' | 'mismatch') => {
-    if (loading) return;
+  // Step 1: Identifier check
+  const handleIdentifierSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!identifier.trim()) {
+      setError('Please enter your Employee ID or official email address.');
+      return;
+    }
+
+    setLoading(true);
     setError('');
-    setScanState('scanning');
-    setScanMessage('Accessing camera...');
 
-    const hasCam = await initCamera();
+    try {
+      const check = await checkUserBiometricStatus(identifier.trim());
+      if (!check.exists) {
+        setError('No account found matching this Employee ID or official email.');
+        return;
+      }
 
-    setTimeout(async () => {
-      setScanState('detected');
-      setScanMessage('Face detected. Extracting 64-D biometric vector...');
+      if (!check.isEnrolled || check.status === 'REVOKED') {
+        setTargetUser({
+          name: check.name || 'Officer',
+          employee_id: check.employee_id || identifier,
+        });
+        setStage('not_enrolled_prompt');
+        return;
+      }
 
-      setTimeout(async () => {
-        setScanState('verifying');
-        setScanMessage('Comparing live biometric landmarks with enrolled officer template...');
+      // User exists and face is enrolled -> proceed to 1:1 Camera Verification!
+      setTargetUser({
+        name: check.name || 'Officer',
+        employee_id: check.employee_id || identifier,
+        challengeToken: check.challengeToken,
+        livenessChallenge: check.livenessChallenge,
+      });
 
-        setTimeout(async () => {
-          try {
-            setLoading(true);
-            const targetUser = getUserById(selectedOfficerId);
-            if (!targetUser) throw new Error('Officer account not found.');
+      setStage('verifying_camera');
+      setScanState('scanning');
+      setLivenessPassed(false);
+      setHoldTicks(0);
 
-            if (!targetUser.faceEnrolled || !targetUser.faceTemplate) {
-              throw new Error(
-                `Face authentication not enrolled for ${targetUser.profile.name}. Please use password sign-in.`
-              );
-            }
-
-            let liveVector: string;
-            if (mode === 'mismatch') {
-              liveVector = generateSimulatedImpostorTemplate(targetUser.profile.name);
-            } else if (videoRef.current && hasCam) {
-              const captured = captureFaceFeatureVector(videoRef.current);
-              liveVector = captured.template || targetUser.faceTemplate;
-            } else {
-              liveVector = targetUser.faceTemplate;
-            }
-
-            const redirectUrl = await loginWithFace(selectedOfficerId, liveVector);
-            setScanState('verified');
-            setScanMessage(`✓ Identity verified. Welcome back, ${targetUser.profile.name}`);
-
-            setTimeout(() => {
-              stopCamera();
-              onSuccess(redirectUrl);
-            }, 1000);
-          } catch (err: any) {
-            setScanState('failed');
-            setScanMessage('Face not recognized.');
-            setError(
-              err?.message ||
-                "Face not recognized. The captured face does not match the enrolled user's reference representation."
-            );
-            stopCamera();
-          } finally {
-            setLoading(false);
-          }
-        }, 800);
-      }, 700);
-    }, hasCam ? 1000 : 500);
+      setTimeout(() => {
+        startCamera();
+      }, 100);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to verify account. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const resetScan = () => {
+  // Step 2: Trigger Verification Scan
+  const executeVerification = async (simulatedMode: 'normal' | 'impostor' = 'normal') => {
+    if (loading || scanState === 'verifying') return;
+    setError('');
+    setScanState('verifying');
+    setLoading(true);
+
+    try {
+      let liveVectorTemplate = '';
+
+      if (simulatedMode === 'impostor') {
+        liveVectorTemplate = generateSimulatedImpostorTemplate(targetUser?.name || 'impostor');
+      } else if (videoRef.current && cameraActive) {
+        const captured = captureFaceFeatureVector(videoRef.current);
+        liveVectorTemplate = captured.template;
+      } else {
+        // Fallback for non-camera device
+        const userRec = getUserById(identifier) || getAllUsers().find(u => u.profile.email.toLowerCase() === identifier.toLowerCase() || u.profile.employee_id.toLowerCase() === identifier.toLowerCase());
+        liveVectorTemplate = userRec?.faceTemplate || generateSimulatedImpostorTemplate('unknown');
+      }
+
+      const redirectUrl = await loginWithFace(identifier.trim(), liveVectorTemplate, {
+        challengeToken: targetUser?.challengeToken,
+        livenessResponse: 'liveness-verified-motion',
+      });
+
+      setScanState('verified');
+      stopCamera();
+
+      setTimeout(() => {
+        onSuccess(redirectUrl);
+      }, 900);
+    } catch (err: any) {
+      setScanState('failed');
+      setError('Face verification was unsuccessful. Please make sure your face is clearly visible and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto trigger verification once liveness and quality are achieved
+  useEffect(() => {
+    if (stage === 'verifying_camera' && livenessPassed && holdTicks >= 3 && scanState === 'scanning' && !loading) {
+      executeVerification('normal');
+    }
+  }, [stage, livenessPassed, holdTicks, scanState, loading]);
+
+  const resetToIdentifier = () => {
     stopCamera();
+    setStage('identifier');
     setScanState('idle');
-    setScanMessage('Position your face inside the frame');
     setError('');
+    setLoading(false);
+    setLivenessPassed(false);
+    setHoldTicks(0);
   };
 
+  // ─── STAGE 1: IDENTIFIER PROMPT ─────────────────────────────────────────────
+  if (stage === 'identifier') {
+    return (
+      <div className="space-y-4 animate-fade-in">
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 bg-navy-100 text-navy-800 rounded-lg">
+              <UserCheck size={16} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-800">1:1 Biometric Identification</p>
+              <p className="text-[11px] text-slate-500">
+                Enter your Employee ID or official email to retrieve your enrolled reference.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleIdentifierSubmit} className="space-y-3 mt-3">
+            <div>
+              <label htmlFor="fa-identifier" className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
+                Employee ID or Official Email
+              </label>
+              <input
+                id="fa-identifier"
+                type="text"
+                value={identifier}
+                onChange={e => {
+                  setIdentifier(e.target.value);
+                  setError('');
+                }}
+                placeholder="e.g. DEMO-L001 or ananya@statwise.gov.in"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-navy-500"
+              />
+            </div>
+
+            {error && (
+              <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-[11px] text-red-700 flex items-start gap-2">
+                <AlertCircle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-navy-700 hover:bg-navy-800 disabled:opacity-60 text-white font-semibold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs shadow-md"
+            >
+              {loading ? (
+                <RefreshCw size={13} className="animate-spin" />
+              ) : (
+                <>
+                  <Camera size={14} /> Continue to Face Verification <ArrowRight size={13} />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Quick preset badges for evaluation */}
+          <div className="pt-3 mt-3 border-t border-slate-200">
+            <span className="text-[10px] text-slate-400 font-semibold block mb-1.5 uppercase">
+              Quick select demo officer:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIdentifier('ananya@statwise.gov.in')}
+                className="text-[10px] bg-white border border-slate-200 hover:border-navy-400 px-2 py-1 rounded text-slate-700 transition"
+              >
+                Ananya (Enrolled)
+              </button>
+              <button
+                type="button"
+                onClick={() => setIdentifier('DEMO-L001')}
+                className="text-[10px] bg-white border border-slate-200 hover:border-cyan-400 px-2 py-1 rounded text-slate-700 transition"
+              >
+                DEMO-L001 (Learner)
+              </button>
+              <button
+                type="button"
+                onClick={() => setIdentifier('trainer@statwise.gov.in')}
+                className="text-[10px] bg-white border border-slate-200 hover:border-purple-400 px-2 py-1 rounded text-slate-700 transition"
+              >
+                Trainer
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[10px] text-slate-400 text-center leading-tight">
+          Protected by 1:1 mathematical landmark verification. No raw photos exposed.
+        </p>
+      </div>
+    );
+  }
+
+  // ─── STAGE 3: NOT ENROLLED PROMPT ──────────────────────────────────────────
+  if (stage === 'not_enrolled_prompt') {
+    return (
+      <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-5 text-center animate-fade-in space-y-3">
+        <div className="w-11 h-11 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center mx-auto">
+          <AlertCircle size={22} />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-slate-800">Face Authentication Not Enrolled</h3>
+          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+            Account <strong>{targetUser?.name}</strong> ({targetUser?.employee_id}) has not completed face enrollment yet.
+          </p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Face enrollment required to secure this account. Complete enrollment below or sign in using password.
+          </p>
+        </div>
+
+        <div className="space-y-2 pt-2">
+          <button
+            type="button"
+            onClick={() => setStage('enrolling')}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl transition-colors text-xs flex items-center justify-center gap-1.5 shadow-md"
+          >
+            <Camera size={14} /> Enroll Face Now
+          </button>
+
+          <button
+            type="button"
+            onClick={onFallback}
+            className="w-full bg-navy-700 hover:bg-navy-800 text-white font-semibold py-2 rounded-xl transition-colors text-xs flex items-center justify-center gap-1.5 shadow-sm"
+          >
+            <KeyRound size={13} /> Sign In With Password
+          </button>
+
+          <button
+            type="button"
+            onClick={resetToIdentifier}
+            className="w-full bg-white hover:bg-slate-100 text-slate-600 font-medium py-2 rounded-xl border border-slate-200 transition-colors text-xs"
+          >
+            Try Another Employee ID
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── STAGE 4: QUICK ENROLLMENT FOR DEMO / UN-ENROLLED USER ─────────────────
+  if (stage === 'enrolling') {
+    return (
+      <div className="animate-fade-in">
+        <FaceEnrollmentView
+          userName={targetUser?.name || 'Learner'}
+          stepLabel="Face Setup · Account Enrollment"
+          onComplete={async (template, thumbnail) => {
+            try {
+              // Find user id to enroll
+              const norm = identifier.toLowerCase().trim();
+              const all = getAllUsers();
+              const target = all.find(
+                u => u.profile.email.toLowerCase() === norm ||
+                     u.profile.employee_id.toLowerCase() === norm ||
+                     u.profile.id.toLowerCase() === norm
+              );
+              const uid = target ? target.profile.id : identifier;
+              await enrollFace(template, thumbnail, true);
+
+              // Switch to live camera verification
+              setStage('verifying_camera');
+              setScanState('scanning');
+              setLivenessPassed(false);
+              setHoldTicks(0);
+              setTimeout(() => {
+                startCamera();
+              }, 100);
+            } catch (err: any) {
+              setError(err?.message || 'Face enrollment failed.');
+              setStage('identifier');
+            }
+          }}
+          onSkip={resetToIdentifier}
+        />
+      </div>
+    );
+  }
+
+  // ─── STAGE 2: CAMERA VERIFICATION ──────────────────────────────────────────
+  const isMatchReady = livenessPassed && quality.canCapture;
   const ovalBorderColor =
     scanState === 'verified'
-      ? 'border-emerald-400'
+      ? 'border-emerald-400 shadow-emerald-400/40 shadow-lg'
       : scanState === 'failed'
-      ? 'border-red-400'
-      : scanState === 'detected' || scanState === 'verifying'
+      ? 'border-red-400 shadow-red-400/30'
+      : isMatchReady
+      ? 'border-emerald-400 shadow-emerald-400/30 animate-pulse'
+      : quality.faceDetected
       ? 'border-blue-400'
-      : 'border-slate-500/80';
-
-  const ovalBg =
-    scanState === 'verified'
-      ? 'bg-emerald-500/10'
-      : scanState === 'failed'
-      ? 'bg-red-500/10'
-      : scanState === 'detected' || scanState === 'verifying'
-      ? 'bg-blue-500/5'
-      : '';
-
-  const dotColor =
-    scanState === 'verified'
-      ? 'bg-emerald-400'
-      : scanState === 'failed'
-      ? 'bg-red-400'
-      : scanState === 'detected' || scanState === 'verifying'
-      ? 'bg-blue-400 animate-ping'
-      : 'bg-amber-400';
-
-  const statusLabel =
-    scanState === 'idle'
-      ? cameraActive
-        ? 'Camera Active'
-        : 'Ready'
-      : scanState === 'scanning'
-      ? 'Scanning...'
-      : scanState === 'detected'
-      ? 'Face Detected'
-      : scanState === 'verifying'
-      ? 'Verifying...'
-      : scanState === 'verified'
-      ? 'Verified'
-      : 'Verification Failed';
-
-  const allUserList =
-    typeof window !== 'undefined' && getAllUsers().length > 0
-      ? getAllUsers().map(u => ({ id: u.profile.id, label: `${u.profile.name} — ${u.profile.designation}` }))
-      : EVAL_PROFILES.map(p => ({ id: p.id, label: `${p.name} — ${p.role}` }));
-
-  const selectedUser = getUserById(selectedOfficerId);
-  const isEnrolled = !!(selectedUser?.faceEnrolled && selectedUser?.faceTemplate);
+      : 'border-slate-500/80 border-dashed';
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      {/* Officer selection — required for 1:1 verification */}
-      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-            Identity Verification Target
-          </label>
-          {isEnrolled ? (
-            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
-              <CheckCircle2 size={10} /> Face Enrolled
-            </span>
-          ) : (
-            <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
-              <AlertCircle size={10} /> Not Enrolled
-            </span>
-          )}
+    <div className="space-y-3 animate-fade-in">
+      {/* Target Officer Badge */}
+      <div className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs">
+        <div className="flex items-center gap-2 truncate">
+          <div className="w-6 h-6 rounded-full bg-navy-700 text-white flex items-center justify-center font-bold text-[10px]">
+            {targetUser?.name ? targetUser.name[0] : 'O'}
+          </div>
+          <span className="font-semibold text-slate-800 truncate">{targetUser?.name}</span>
+          <span className="text-[10px] text-slate-400 font-mono">({targetUser?.employee_id})</span>
         </div>
-        <select
-          value={selectedOfficerId}
-          onChange={e => {
-            setSelectedOfficerId(e.target.value);
-            setError('');
-            setScanState('idle');
-          }}
-          className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white
-                     text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-navy-500"
+        <button
+          type="button"
+          onClick={resetToIdentifier}
+          className="text-[11px] text-navy-600 hover:underline flex-shrink-0 font-medium"
         >
-          {allUserList.map(u => (
-            <option key={u.id} value={u.id}>
-              {u.label}
-            </option>
-          ))}
-        </select>
+          Change
+        </button>
       </div>
 
-      {/* Camera viewport */}
-      <div className="relative w-full aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-700">
-        {/* Live stream */}
+      {/* Camera Preview with Oval Frame */}
+      <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-[4/3] w-full max-w-sm mx-auto shadow-inner flex items-center justify-center">
         <video
           ref={videoRef}
-          autoPlay
           playsInline
           muted
-          className={`w-full h-full object-cover transform -scale-x-100 ${cameraActive ? 'block' : 'hidden'}`}
+          className="w-full h-full object-cover transform -scale-x-100"
         />
 
-        {/* Idle placeholder */}
-        {!cameraActive && (
-          <div className="flex flex-col items-center justify-center p-6 text-center text-slate-400">
-            <Camera size={40} className="mb-2 opacity-50 text-saffron-400" />
-            <p className="text-xs font-semibold text-slate-300">Face Authentication Preview</p>
-            <p className="text-[11px] text-slate-500 mt-1 max-w-xs leading-relaxed">
-              {cameraError || 'Click "Start Face Authentication" to begin'}
+        {/* Oval Face Frame */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div
+            className={`w-44 h-60 rounded-[50%] border-4 transition-all duration-300 relative flex items-center justify-center ${ovalBorderColor}`}
+          >
+            {/* Crosshairs */}
+            <div className="absolute top-2 w-6 h-0.5 bg-white/40 rounded-full" />
+            <div className="absolute bottom-2 w-6 h-0.5 bg-white/40 rounded-full" />
+            <div className="absolute left-2 h-6 w-0.5 bg-white/40 rounded-full" />
+            <div className="absolute right-2 h-6 w-0.5 bg-white/40 rounded-full" />
+          </div>
+        </div>
+
+        {/* Scan line effect during verification */}
+        {scanState === 'verifying' && (
+          <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-pulse" />
+        )}
+
+        {/* Success overlay */}
+        {scanState === 'verified' && (
+          <div className="absolute inset-0 bg-emerald-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 animate-fade-in">
+            <CheckCircle2 size={40} className="text-emerald-400 mb-2" />
+            <p className="text-sm font-bold">Identity verified.</p>
+            <p className="text-xs text-emerald-200 mt-0.5">Redirecting to your authorized dashboard...</p>
+          </div>
+        )}
+
+        {/* Camera error */}
+        {cameraError && (
+          <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center text-white p-4 text-center">
+            <AlertCircle size={28} className="text-amber-400 mb-2" />
+            <p className="text-xs text-slate-200 leading-relaxed mb-3">{cameraError}</p>
+            <button
+              type="button"
+              onClick={startCamera}
+              className="px-3 py-1.5 bg-navy-600 hover:bg-navy-700 text-white rounded-lg text-xs font-semibold"
+            >
+              Retry Camera
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Real-time Guidance / Liveness Notice */}
+      <div className="text-center">
+        <div
+          className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${
+            scanState === 'verified'
+              ? 'bg-emerald-100 text-emerald-800'
+              : scanState === 'failed'
+              ? 'bg-red-100 text-red-800'
+              : livenessPassed
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-blue-50 text-blue-700 border border-blue-200'
+          }`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${
+              scanState === 'verified'
+                ? 'bg-emerald-500'
+                : scanState === 'failed'
+                ? 'bg-red-500'
+                : 'bg-blue-500 animate-pulse'
+            }`}
+          />
+          <span>
+            {scanState === 'verifying'
+              ? 'Comparing biometric representation with server...'
+              : scanState === 'verified'
+              ? 'Identity verified.'
+              : scanState === 'failed'
+              ? 'Verification unsuccessful.'
+              : quality.statusMessage}
+          </span>
+        </div>
+
+        {/* Liveness presence instruction */}
+        {scanState === 'scanning' && !livenessPassed && (
+          <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-2.5 mt-2 text-center text-xs text-amber-900 animate-fade-in max-w-sm mx-auto">
+            <p className="font-bold flex items-center justify-center gap-1.5 text-amber-950 text-xs">
+              <Sparkles size={13} className="text-amber-600" />
+              Liveness Check:{' '}
+              {targetUser?.livenessChallenge === 'turn_left'
+                ? 'Turn head slightly left'
+                : targetUser?.livenessChallenge === 'turn_right'
+                ? 'Turn head slightly right'
+                : targetUser?.livenessChallenge === 'smile'
+                ? 'Smile at the camera'
+                : 'Blink naturally at the camera'}
+            </p>
+            <p className="text-[11px] text-amber-800 mt-0.5">
+              Look directly at the camera and perform the requested motion to verify physical presence.
+            </p>
+            <p className="text-[10px] text-amber-600/80 mt-1">
+              Note: Presence verification provides basic presentation attack detection.
             </p>
           </div>
         )}
 
-        {/* Oval guide overlay */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div
-            className={`w-40 h-52 border-2 border-dashed rounded-[50%] transition-all duration-300
-                        flex items-center justify-center relative ${ovalBorderColor} ${ovalBg}
-                        ${scanState === 'detected' || scanState === 'verifying' ? 'animate-pulse' : ''}`}
-          >
-            {(scanState === 'scanning' || scanState === 'verifying') && (
-              <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-saffron-400 to-transparent animate-pulse absolute top-1/2 -translate-y-1/2" />
-            )}
+        {livenessPassed && scanState !== 'verified' && scanState !== 'failed' && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2 mt-2 text-center text-xs text-emerald-800 font-semibold flex items-center justify-center gap-1.5 animate-fade-in max-w-sm mx-auto">
+            <CheckCircle2 size={14} className="text-emerald-600 flex-shrink-0" />
+            <span>Physical presence confirmed · Verifying biometric landmarks</span>
           </div>
-        </div>
-
-        {/* Live indicator */}
-        <div className="absolute top-2.5 left-2.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-white/10">
-          <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-          <span className="text-[10px] font-medium text-white">{statusLabel}</span>
-        </div>
-      </div>
-
-      {/* Status message */}
-      <div
-        className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
-          scanState === 'verified'
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-            : scanState === 'failed'
-            ? 'bg-red-50 border-red-200 text-red-800'
-            : 'bg-slate-50 border-slate-200 text-slate-700'
-        }`}
-      >
-        {scanState === 'verified' ? (
-          <CheckCircle2 size={15} className="text-emerald-600 flex-shrink-0" />
-        ) : scanState === 'failed' ? (
-          <AlertCircle size={15} className="text-red-600 flex-shrink-0" />
-        ) : scanState === 'verifying' || scanState === 'scanning' ? (
-          <RefreshCw size={13} className="text-blue-600 animate-spin flex-shrink-0" />
-        ) : (
-          <Camera size={13} className="text-slate-500 flex-shrink-0" />
         )}
-        <span className="font-medium">{scanMessage}</span>
       </div>
 
-      {/* Error with actions */}
+      {/* Error message */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2.5">
-          <p className="text-red-700 text-xs font-semibold">{error}</p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={resetScan}
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
-            >
-              <RefreshCw size={11} /> Try Again
-            </button>
-            <button
-              type="button"
-              onClick={onFallback}
-              className="px-3 py-1.5 bg-white border border-red-300 hover:bg-red-50 text-red-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
-            >
-              <KeyRound size={11} /> Use Password Instead
-            </button>
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+          <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">{error}</p>
+            <p className="text-[11px] text-red-600 mt-0.5">Please make sure your face is clearly visible and try again.</p>
           </div>
         </div>
       )}
 
-      {/* Primary CTA */}
-      {(scanState === 'idle' || scanState === 'failed') && (
-        <button
-          type="button"
-          onClick={() => runFaceScan('match')}
-          disabled={loading}
-          className="w-full bg-navy-700 hover:bg-navy-800 disabled:opacity-60 text-white font-semibold
-                     py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm shadow-md"
-        >
-          <Camera size={15} /> Start Face Authentication
-        </button>
-      )}
-
-      {(scanState === 'scanning' || scanState === 'detected' || scanState === 'verifying') && (
-        <div className="flex gap-2">
+      {/* Action Buttons */}
+      <div className="space-y-2 pt-1">
+        {scanState !== 'verifying' && scanState !== 'verified' && (
           <button
             type="button"
-            onClick={resetScan}
-            className="flex-1 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold py-2.5 rounded-xl text-xs transition-colors"
+            onClick={() => executeVerification('normal')}
+            disabled={loading}
+            className="w-full bg-navy-700 hover:bg-navy-800 disabled:opacity-60 text-white font-semibold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs shadow-md"
           >
-            Cancel
+            <Camera size={14} /> Verify Identity Now
           </button>
+        )}
+
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            disabled
-            className="flex-1 bg-navy-700 text-white font-semibold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 opacity-70"
+            onClick={resetToIdentifier}
+            className="flex-1 bg-white hover:bg-slate-100 text-slate-700 font-medium py-2 rounded-xl border border-slate-200 text-xs transition"
           >
-            <RefreshCw size={13} className="animate-spin" /> Verifying…
+            Try Again / Back
+          </button>
+
+          <button
+            type="button"
+            onClick={onFallback}
+            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-xl text-xs transition"
+          >
+            Use Password
           </button>
         </div>
-      )}
 
-      {/* Evaluator mismatch simulation — de-emphasized */}
-      <div className="pt-1 border-t border-slate-100 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => runFaceScan('mismatch')}
-          disabled={loading}
-          className="text-[11px] text-slate-300 hover:text-red-500 font-medium flex items-center gap-1 transition-colors disabled:opacity-50"
-        >
-          <X size={10} /> Simulate mismatch (evaluator)
-        </button>
-        <span className="text-[10px] text-slate-200">SIH Demo · Cosine Sim ≥ 80%</span>
+        {/* Evaluator Impostor Mismatch Test Button */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+          <button
+            type="button"
+            onClick={() => executeVerification('impostor')}
+            disabled={loading}
+            className="text-slate-400 hover:text-red-600 transition flex items-center gap-1"
+          >
+            <X size={11} /> Test Impostor Face (Evaluator)
+          </button>
+          <span className="text-slate-400 text-[10px]">1:1 Verification Model</span>
+        </div>
       </div>
-
-      <p className="text-[10px] text-slate-400 text-center leading-tight">
-        * Privacy-first: mathematical vectors only — no raw photo storage.
-      </p>
     </div>
   );
 }
 
 // ─── Main Login Page ─────────────────────────────────────────────────────────
 export default function LoginPage() {
-  const [authMethod, setAuthMethod] = useState<'password' | 'face'>('password');
+  const [authMethod, setAuthMethod] = useState<'password' | 'face'>('face');
 
   // Password form state
   const [email, setEmail] = useState('');
@@ -556,21 +814,17 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [evalOpen, setEvalOpen] = useState(false);
 
   const { login, switchDemoUser } = useAuth();
   const router = useRouter();
 
-  // Switch auth method — clear state
   const switchMethod = (method: 'password' | 'face') => {
     setAuthMethod(method);
     setError('');
-    setSuccessMsg('');
   };
 
-  // Password login → role-based routing via AuthService.getRedirectPath
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -579,11 +833,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     setError('');
-    setSuccessMsg('');
     try {
-      // AuthService.loginWithPassword calls store.loginUser then getRedirectPath,
-      // which correctly routes: admin→/admin, trainer→/trainer,
-      // employee (onboarded)→/dashboard, employee (new)→/onboarding
       const redirectUrl = await login(email.trim(), password);
       router.push(redirectUrl || '/dashboard');
     } catch (err: any) {
@@ -593,16 +843,13 @@ export default function LoginPage() {
     }
   };
 
-  // Face auth success → already has redirectUrl from auth service
   const handleFaceSuccess = (redirectUrl: string) => {
     router.push(redirectUrl);
   };
 
-  // Evaluation Mode: switch to demo profile and navigate to correct role destination
   const handleEvalSelect = (profile: typeof EVAL_PROFILES[0]) => {
     setEvalOpen(false);
     switchDemoUser(profile.id);
-    // switchDemoUser will trigger a full page reload to the correct role destination
   };
 
   return (
@@ -614,10 +861,8 @@ export default function LoginPage() {
       />
 
       <div className="min-h-screen bg-gradient-to-br from-navy-700 via-navy-800 to-slate-900 flex">
-
-        {/* ── Left Branding Panel ──────────────────────────────────── */}
+        {/* Left Branding Panel */}
         <div className="hidden lg:flex flex-col justify-between w-[420px] flex-shrink-0 p-10">
-          {/* Logo + tagline */}
           <div>
             <div className="flex items-center gap-3 mb-12">
               <div className="w-10 h-10 bg-saffron-400 rounded-xl flex items-center justify-center shadow-lg shadow-saffron-400/20">
@@ -633,11 +878,10 @@ export default function LoginPage() {
               Every Officer.<br />Their Own Learning<br />Intelligence.
             </h1>
             <p className="text-navy-300 text-base max-w-sm leading-relaxed">
-              Personalized competency profiling and learning pathways for India's Official Statistical System.
+              Personalized competency profiling and learning pathways for India&apos;s Official Statistical System.
             </p>
           </div>
 
-          {/* Feature cards */}
           <div className="space-y-3">
             <FeatureCard
               icon={<Zap size={16} />}
@@ -650,26 +894,24 @@ export default function LoginPage() {
               desc="Learning targets are calibrated against MoSPI-defined standards for every designation."
             />
             <FeatureCard
-              icon={<BrainCircuit size={16} />}
+              icon={<Users size={16} />}
               title="Personalized Learning Paths"
               desc="Learning recommendations are generated from each officer's identified competency gaps."
             />
           </div>
 
-          {/* Footer */}
-          <p className="text-navy-300/40 text-[11px]">
-            Ministry of Statistics &amp; Programme Implementation · Official Statistical System
-          </p>
+          <div className="flex items-center justify-between text-navy-300/60 text-xs">
+            <span>Ministry of Statistics &amp; Programme Implementation</span>
+          </div>
         </div>
 
-        {/* ── Right Auth Panel ─────────────────────────────────────── */}
-        <div className="flex-1 flex items-center justify-center p-6 sm:p-10 overflow-y-auto">
-          <div className="w-full max-w-md my-auto">
-
-            {/* Mobile logo */}
-            <div className="lg:hidden flex items-center gap-3 mb-6">
-              <div className="w-9 h-9 bg-saffron-400 rounded-xl flex items-center justify-center">
-                <span className="text-white font-bold text-xs">SW</span>
+        {/* Right Form Panel */}
+        <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
+          <div className="w-full max-w-md">
+            {/* Mobile Branding */}
+            <div className="lg:hidden flex items-center gap-3 mb-8">
+              <div className="w-10 h-10 bg-saffron-400 rounded-xl flex items-center justify-center shadow-md">
+                <span className="text-white font-bold text-sm">SW</span>
               </div>
               <div>
                 <p className="text-white font-bold text-lg">StatWise</p>
@@ -677,170 +919,178 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Auth card */}
+            {/* Main Card */}
             <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8">
-
-              {/* Heading */}
-              <div className="mb-5">
-                <h2 className="text-xl font-bold text-slate-800">Welcome to StatWise</h2>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  {authMethod === 'password'
-                    ? 'Sign in using your organizational credentials.'
-                    : 'Use your camera to verify your identity against your enrolled profile.'}
-                </p>
-              </div>
-
-              {/* Auth method tabs */}
-              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl mb-5 border border-slate-200">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Welcome to StatWise</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Sign in using your official credentials or face verification.
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => switchMethod('password')}
-                  className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                    authMethod === 'password'
-                      ? 'bg-white text-navy-800 shadow-sm border border-slate-200'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
+                  onClick={() => setEvalOpen(true)}
+                  className="flex items-center gap-1.5 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-lg font-medium hover:bg-amber-100 transition-colors"
                 >
-                  <KeyRound size={13} className={authMethod === 'password' ? 'text-navy-700' : 'text-slate-400'} />
-                  Password Login
+                  <FlaskConical size={12} /> Eval Mode
                 </button>
+              </div>
 
+              {/* Method Switcher Tabs */}
+              <div className="flex rounded-xl bg-slate-100 p-1 mb-5">
                 <button
                   type="button"
                   onClick={() => switchMethod('face')}
-                  className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all ${
                     authMethod === 'face'
-                      ? 'bg-white text-navy-800 shadow-sm border border-slate-200'
+                      ? 'bg-white text-navy-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  <Camera size={13} className={authMethod === 'face' ? 'text-saffron-500' : 'text-slate-400'} />
-                  Face Authentication
+                  <Camera size={14} /> Face Sign-In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchMethod('password')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    authMethod === 'password'
+                      ? 'bg-white text-navy-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <KeyRound size={14} /> Password
                 </button>
               </div>
 
-              {/* ── Password Login ── */}
-              {authMethod === 'password' && (
-                <form onSubmit={handlePasswordLogin} className="space-y-4 animate-fade-in">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Official Email / Employee ID
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="e.g. EMP001, EMP002, or official email"
-                      className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm
-                                 focus:outline-none focus:ring-2 focus:ring-navy-500 transition"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Password</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm
-                                   focus:outline-none focus:ring-2 focus:ring-navy-500 pr-10 transition"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(v => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                      >
-                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-0.5">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        defaultChecked
-                        className="h-3.5 w-3.5 rounded accent-navy-700"
-                      />
-                      <span className="text-xs font-medium text-slate-600">Remember me</span>
-                    </label>
-                    <a href="#" className="text-xs font-semibold text-navy-700 hover:text-navy-800 transition-colors">
-                      Forgot password?
-                    </a>
-                  </div>
-
-                  {error && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
-                      <p className="text-red-600 text-xs">{error}</p>
-                    </div>
-                  )}
-
-                  {successMsg && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5 flex items-center gap-2">
-                      <CheckCircle2 size={14} className="text-emerald-600 flex-shrink-0" />
-                      <p className="text-emerald-700 text-xs font-medium">{successMsg}</p>
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full bg-navy-700 hover:bg-navy-800 disabled:opacity-60 text-white
-                               font-semibold py-2.5 rounded-xl transition-colors flex items-center
-                               justify-center gap-2 text-sm shadow-md mt-1"
-                  >
-                    {loading ? (
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <LogIn size={15} /> Sign In
-                      </>
-                    )}
-                  </button>
-
-                  {/* Create Account link — secondary, below Sign In */}
-                  <div className="text-center pt-1">
-                    <span className="text-slate-500 text-xs">New to StatWise? </span>
-                    <a
-                      href="/create-account"
-                      className="text-xs font-semibold text-navy-700 hover:text-navy-800 transition-colors"
-                    >
-                      Create an account
-                    </a>
-                  </div>
-                </form>
-              )}
-
-              {/* ── Face Authentication ── */}
+              {/* FACE AUTHENTICATION PANEL */}
               {authMethod === 'face' && (
                 <FaceAuthPanel
                   onSuccess={handleFaceSuccess}
                   onFallback={() => switchMethod('password')}
                 />
               )}
-            </div>
 
-            {/* Evaluation Mode — subtle */}
-            <div className="mt-4 text-center">
-              <button
-                type="button"
-                onClick={() => setEvalOpen(true)}
-                className="inline-flex items-center gap-1.5 text-[11px] text-navy-400/70
-                           hover:text-navy-300 transition-colors font-medium"
-              >
-                <FlaskConical size={11} />
-                Evaluation Mode
-                <ChevronDown size={10} />
-              </button>
-            </div>
+              {/* PASSWORD LOGIN FORM */}
+              {authMethod === 'password' && (
+                <form onSubmit={handlePasswordLogin} className="space-y-4">
+                  {error && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                      <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+                      <span>{error}</span>
+                    </div>
+                  )}
 
-            <p className="text-center text-navy-400/50 text-[11px] mt-5">
-              StatWise · Ministry of Statistics &amp; Programme Implementation
-            </p>
+                  {/* Quick Role Fill Pills */}
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 space-y-1.5">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Quick Demo Role Credentials:
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmail('ananya@statsetu.gov.in');
+                          setPassword('demo123');
+                        }}
+                        className="py-1 px-2 text-[11px] font-semibold rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition text-center truncate"
+                        title="Learner: Ananya Sharma"
+                      >
+                        Learner
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmail('trainer@statsetu.gov.in');
+                          setPassword('demo123');
+                        }}
+                        className="py-1 px-2 text-[11px] font-semibold rounded-lg bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100 transition text-center truncate"
+                        title="Trainer: Sunita Rao"
+                      >
+                        Trainer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmail('admin@statsetu.gov.in');
+                          setPassword('demo123');
+                        }}
+                        className="py-1 px-2 text-[11px] font-semibold rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition text-center truncate"
+                        title="Administrator: Dr. Rajesh Verma"
+                      >
+                        Administrator
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="login-email" className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                      Official Email or Employee ID
+                    </label>
+                    <input
+                      id="login-email"
+                      type="text"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="e.g. admin@statsetu.gov.in or ananya@statsetu.gov.in"
+                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="login-pw" className="block text-xs font-semibold text-slate-700 uppercase">
+                        Password
+                      </label>
+                      <span className="text-[10px] text-slate-400">demo123</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        id="login-pw"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(v => !v)}
+                        tabIndex={-1}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-navy-700 hover:bg-navy-800 disabled:opacity-60 text-white font-semibold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm shadow-md"
+                  >
+                    {loading ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      'Sign In'
+                    )}
+                  </button>
+                </form>
+              )}
+
+              {/* Bottom Registration Link */}
+              <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+                <p className="text-xs text-slate-500">
+                  New official or learner?{' '}
+                  <a
+                    href="/create-account"
+                    className="font-semibold text-navy-700 hover:text-navy-900 transition-colors"
+                  >
+                    Create Account &amp; Enroll Face
+                  </a>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

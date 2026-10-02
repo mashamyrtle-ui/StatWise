@@ -7,20 +7,34 @@ import { getGapColor, getProgressColor, getScoreColor, cn } from '@/lib/utils';
 import {
   TrendingUp, Target, BookOpen, Clock, Award, AlertTriangle,
   ArrowRight, Sparkles, ChevronRight, Bell, CheckCircle2,
-  BarChart3, Zap, RefreshCw, ClipboardList
+  BarChart3, Zap, RefreshCw, ClipboardList, Camera, X, Shield
 } from 'lucide-react';
 import Link from 'next/link';
+import FaceEnrollmentView from '@/components/biometrics/FaceEnrollmentView';
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip
 } from 'recharts';
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, enrollFace } = useAuth();
   const [competencies, setCompetencies] = useState<store.CompetencyScore[]>([]);
   const [gaps, setGaps] = useState<store.SkillGapResult | null>(null);
   const [recommendations, setRecommendations] = useState<store.Recommendation[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [history, setHistory] = useState<store.HistoryItem[]>([]);
+  const [enrollModalOpen, setEnrollModalOpen] = useState(false);
+  const [enrollSuccessMessage, setEnrollSuccessMessage] = useState<string | null>(null);
+
+  const handleFaceEnrollmentComplete = async (template: string, thumbnail?: string) => {
+    try {
+      await enrollFace(template, thumbnail, true);
+      setEnrollModalOpen(false);
+      setEnrollSuccessMessage('Face authentication successfully registered and activated for your account.');
+      setTimeout(() => setEnrollSuccessMessage(null), 6000);
+    } catch (err: any) {
+      alert(err?.message || 'Face enrollment failed.');
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -119,6 +133,66 @@ export default function DashboardPage() {
         <span className="text-orange-400 mx-1">·</span>
         <span className="text-orange-700 text-xs font-medium">NSSTA Integration: Prototype / Mock</span>
       </div>
+
+      {/* Face Enrollment Success Notice */}
+      {enrollSuccessMessage && (
+        <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3 text-xs text-emerald-800 font-semibold animate-fade-in">
+          <CheckCircle2 size={18} className="text-emerald-600 flex-shrink-0" />
+          <span>{enrollSuccessMessage}</span>
+        </div>
+      )}
+
+      {/* Existing User Migration: Face Authentication Enrollment Prompt */}
+      {(!user.faceEnrolled || user.faceEnrollmentStatus === 'NOT_ENROLLED') && (
+        <div className="mb-6 bg-gradient-to-r from-navy-800 to-navy-900 text-white rounded-2xl p-5 shadow-lg border border-navy-700/50 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 bg-saffron-400/20 text-saffron-400 rounded-xl flex-shrink-0 mt-0.5">
+              <Camera size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-saffron-400/20 text-saffron-300 px-2 py-0.5 rounded">
+                  Security Setup Recommended
+                </span>
+                <span className="text-xs text-navy-300">MoSPI 1:1 Identity Standard</span>
+              </div>
+              <h2 className="text-base font-bold text-white">Set up Face Authentication</h2>
+              <p className="text-xs text-navy-200 mt-0.5 max-w-xl leading-relaxed">
+                Register your face once. We&apos;ll use it to verify your identity when you sign in. Encrypted at rest using 64-D mathematical landmarks with zero raw photo exposure.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setEnrollModalOpen(true)}
+            className="flex-shrink-0 bg-saffron-400 hover:bg-saffron-500 text-navy-950 font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+          >
+            <Camera size={14} /> Enroll My Face <ArrowRight size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* Face Enrollment Modal */}
+      {enrollModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(10,18,35,0.7)', backdropFilter: 'blur(8px)' }}
+        >
+          <div className="relative w-full max-w-lg animate-fade-in">
+            <button
+              onClick={() => setEnrollModalOpen(false)}
+              className="absolute -top-10 right-0 text-white/80 hover:text-white p-1 rounded-lg"
+            >
+              <X size={20} />
+            </button>
+            <FaceEnrollmentView
+              userName={user.name}
+              stepLabel="Account Setup · Face Authentication"
+              onComplete={handleFaceEnrollmentComplete}
+              onSkip={() => setEnrollModalOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Not-assessed banner */}
       {!assessed && (

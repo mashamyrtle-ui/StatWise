@@ -68,9 +68,10 @@ os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 # ─── ROUTERS ────────────────────────────────────────────────────────────────
-from app.routers import auth, users, competencies, assessments, courses, materials, analytics, chat
+from app.routers import auth, biometrics, users, competencies, assessments, courses, materials, analytics, chat
 
 app.include_router(auth.router)
+app.include_router(biometrics.router)
 app.include_router(users.router)
 app.include_router(competencies.router)
 app.include_router(assessments.router)

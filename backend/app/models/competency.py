@@ -58,6 +58,9 @@ class UserCompetency(Base):
     competency_id = Column(Integer, ForeignKey("competencies.id"), nullable=False)
     current_level = Column(Integer, default=1)  # 1-5
     score_percentage = Column(Float, default=0.0)  # 0-100
+    confidence = Column(String(50), default="Medium")
+    primary_evidence = Column(String(500), nullable=True)
+    status = Column(String(50), default="Verified")
     last_assessed = Column(DateTime(timezone=True))
     assessment_count = Column(Integer, default=0)
     notes = Column(Text)

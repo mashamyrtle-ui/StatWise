@@ -44,6 +44,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    face_authentication_enabled = Column(Boolean, default=False)
+    face_enrollment_status = Column(String(50), default="NOT_ENROLLED")
+
     department = relationship("Department", back_populates="users", lazy="selectin")
     user_competencies = relationship("UserCompetency", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     quiz_attempts = relationship("QuizAttempt", back_populates="user", cascade="all, delete-orphan")
@@ -51,4 +54,6 @@ class User(Base):
     recommendations = relationship("Recommendation", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     assessment_attempts = relationship("AssessmentAttempt", back_populates="user", cascade="all, delete-orphan")
+    face_enrollment = relationship("FaceEnrollment", back_populates="user", uselist=False, cascade="all, delete-orphan", lazy="selectin")
+    biometric_audit_logs = relationship("BiometricAuditLog", back_populates="user", cascade="all, delete-orphan")
 

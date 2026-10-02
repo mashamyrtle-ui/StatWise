@@ -28,6 +28,8 @@ class UserBase(BaseModel):
     education: Optional[str] = None
     career_goal: Optional[str] = None
     avatar_url: Optional[str] = None
+    face_authentication_enabled: Optional[bool] = False
+    face_enrollment_status: Optional[str] = "NOT_ENROLLED"
 
 
 class UserCreate(UserBase):

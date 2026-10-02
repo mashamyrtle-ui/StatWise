@@ -8,7 +8,7 @@ import { DEMO_USER_IDS } from '@/lib/store';
 import {
   LayoutDashboard, BookOpen, BarChart3, Target, Map,
   ClipboardList, Sparkles, MessageSquare,
-  History, TrendingUp, Users,
+  History, TrendingUp, Users, Award, ShieldCheck,
   LogOut, ChevronLeft, ChevronRight, User, RefreshCw, ArrowLeftRight,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -18,6 +18,7 @@ interface NavItem {
   label: string;
   icon: any;
   divider?: boolean;
+  section?: string;
 }
 
 const employeeNav: NavItem[] = [
@@ -34,14 +35,34 @@ const employeeNav: NavItem[] = [
   { href: '/profile', label: 'Profile', icon: User },
 ];
 
+const trainerNav: NavItem[] = [
+  { href: '/trainer', label: 'Trainer Dashboard', icon: LayoutDashboard },
+  { href: '/quiz-generator', label: 'AI Quiz Generator', icon: Sparkles },
+  { href: '/courses', label: 'Course Catalogue', icon: BookOpen },
+  { href: '/assessments', label: 'Assessments', icon: ClipboardList },
+  { href: '/assistant', label: 'AI Assistant', icon: MessageSquare },
+  { href: '/analytics', label: 'Analytics', icon: TrendingUp },
+  { href: '/profile', label: 'Profile', icon: User },
+];
+
 const adminNav: NavItem[] = [
-  ...employeeNav,
-  { href: '/admin', label: 'Workforce Analytics', icon: Users, divider: true },
+  { href: '/admin', label: 'Admin Dashboard', icon: LayoutDashboard },
+  { href: '/admin/employees', label: 'Employees Directory', icon: Users, section: 'Workforce' },
+  { href: '/admin/trainers', label: 'Trainers & Approvals', icon: Award },
+  { href: '/admin/competencies', label: 'Competency Framework', icon: Target, section: 'Competency Governance' },
+  { href: '/admin/courses', label: 'Course Management', icon: BookOpen, section: 'Training & Catalog' },
+  { href: '/admin/assessments', label: 'Assessment Governance', icon: ClipboardList, section: 'Assessments' },
+  { href: '/admin/analytics', label: 'Workforce Analytics', icon: BarChart3, section: 'Analytics' },
+  { href: '/admin/audit-logs', label: 'Audit Logs', icon: ShieldCheck, section: 'Governance & Audit' },
+  { href: '/assistant', label: 'Admin AI Assistant', icon: MessageSquare, divider: true },
+  { href: '/profile', label: 'Admin Profile', icon: User },
 ];
 
 const DEMO_USERS = [
-  { id: DEMO_USER_IDS.ANANYA, label: 'Ananya Sharma', sub: 'Statistical Officer' },
-  { id: DEMO_USER_IDS.RAHUL, label: 'Rahul Kumar', sub: 'Statistical Officer' },
+  { id: DEMO_USER_IDS.ANANYA, label: 'Ananya Sharma', sub: 'Statistical Officer (Learner)' },
+  { id: DEMO_USER_IDS.RAHUL, label: 'Rahul Kumar', sub: 'Statistical Officer (Learner)' },
+  { id: DEMO_USER_IDS.TRAINER, label: 'Sunita Rao', sub: 'Faculty Officer (Trainer)' },
+  { id: DEMO_USER_IDS.ADMIN, label: 'Dr. Rajesh Verma', sub: 'Deputy Director General (Admin)' },
 ];
 
 export default function Sidebar() {
@@ -51,7 +72,12 @@ export default function Sidebar() {
   const [showDemoMenu, setShowDemoMenu] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
 
-  const navItems = user?.role === 'admin' ? adminNav : employeeNav;
+  const navItems =
+    user?.role === 'admin'
+      ? adminNav
+      : user?.role === 'trainer'
+      ? trainerNav
+      : employeeNav;
 
   return (
     <aside
@@ -66,33 +92,49 @@ export default function Sidebar() {
         {!collapsed && (
           <div>
             <p className="font-bold text-white text-sm leading-none">StatWise</p>
-            <p className="text-navy-300 text-xs mt-0.5">MoSPI · Prototype</p>
+            <p className="text-navy-300 text-xs mt-0.5">
+              {user?.role === 'admin' ? 'MoSPI · Admin Console' : user?.role === 'trainer' ? 'NSSTA · Trainer Portal' : 'MoSPI · Learner Portal'}
+            </p>
           </div>
         )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-2 overflow-y-auto">
+      <nav className="flex-1 py-3 px-2 overflow-y-auto">
         {navItems.map(item => {
           const Icon = item.icon;
-          const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+          const isExactAdmin = item.href === '/admin';
+          const isExactDashboard = item.href === '/dashboard' || item.href === '/trainer';
+          const isActive = isExactAdmin
+            ? pathname === '/admin'
+            : isExactDashboard
+            ? pathname === item.href
+            : pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
           const showDivider = 'divider' in item && item.divider;
 
           return (
             <div key={item.href}>
-              {showDivider && !collapsed && (
-                <div className="mx-2 my-3 border-t border-navy-600">
-                  <p className="text-navy-400 text-xs font-medium mt-2 mb-1 px-1">Administration</p>
+              {item.section && !collapsed && (
+                <div className="mx-2 mt-3.5 mb-1">
+                  <p className="text-navy-400 text-[10px] font-bold tracking-wider uppercase px-2">
+                    {item.section}
+                  </p>
                 </div>
               )}
+              {item.section && collapsed && <div className="my-1.5 border-t border-navy-600/60" />}
+
+              {showDivider && !collapsed && (
+                <div className="mx-2 my-2.5 border-t border-navy-600" />
+              )}
               {showDivider && collapsed && <div className="my-2 border-t border-navy-600" />}
+
               <Link href={item.href}
-                className={cn('flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5',
+                className={cn('flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium mb-0.5',
                   'transition-all duration-150', collapsed && 'justify-center px-2',
-                  isActive ? 'bg-navy-600 text-white' : 'text-navy-200 hover:bg-navy-600 hover:text-white')}
+                  isActive ? 'bg-navy-600 text-white shadow-sm' : 'text-navy-200 hover:bg-navy-600/70 hover:text-white')}
                 title={collapsed ? item.label : undefined}>
-                <Icon size={18} className="flex-shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
+                <Icon size={17} className="flex-shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             </div>
           );

@@ -12,19 +12,44 @@ interface Message {
   timestamp: string;
 }
 
-const STARTER_PROMPTS = [
+const LEARNER_PROMPTS = [
   { text: "What should I learn next to improve my data science skills for official statistics?", icon: Target },
   { text: "Explain the difference between Stratified Random Sampling and PPS Sampling.", icon: BookOpen },
   { text: "How can I prepare for the upcoming NSSTA Survey Methodology training?", icon: Sparkles },
   { text: "Summarize my top competency gaps and suggest high-impact courses.", icon: HelpCircle }
 ];
 
+const ADMIN_PROMPTS = [
+  { text: "Analyze critical skill gaps in Field Operations Division (FOD) and recommend training interventions.", icon: Target },
+  { text: "What are the latest compliance standards for the DPDPA 2023 in official statistical data lakes?", icon: BookOpen },
+  { text: "Summarize pre- vs post-training score improvements across Python and GIS cohorts.", icon: Sparkles },
+  { text: "Recommend competency threshold adjustments for the Senior Statistical Officer role.", icon: HelpCircle }
+];
+
+const TRAINER_PROMPTS = [
+  { text: "Help me design a 5-question diagnostic quiz on two-stage stratified sampling.", icon: Target },
+  { text: "What are the most common misconceptions among learners in Python for Official Statistics?", icon: BookOpen },
+  { text: "Draft a curriculum module outline for Time Series & Economic Forecasting in MoSPI.", icon: Sparkles },
+  { text: "How can I benchmark cohort performance against national standards?", icon: HelpCircle }
+];
+
 export default function AssistantPage() {
   const { user } = useAuth();
+
+  const starterPrompts = user?.role === 'admin'
+    ? ADMIN_PROMPTS
+    : user?.role === 'trainer'
+    ? TRAINER_PROMPTS
+    : LEARNER_PROMPTS;
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: `Namaste ${user?.name?.split(' ')[0] || 'Officer'}! I am your **StatWise AI Learning Assistant**.\n\nI have access to your competency profile, current role requirements, and learning path. How can I assist your capacity-building journey today?`,
+      content: user?.role === 'admin'
+        ? `Namaste ${user?.name || 'Administrator'}! I am your **StatWise Governance & Workforce Intelligence Assistant**.\n\nI have access to enterprise cadre competency distributions, job role standards, and cohort effectiveness analytics. How can I assist with policy, curriculum governance, or capacity planning today?`
+        : user?.role === 'trainer'
+        ? `Namaste ${user?.name || 'Faculty Member'}! I am your **StatWise Faculty Co-Pilot**.\n\nI can assist with curriculum design, question authoring, cohort analytics, and pedagogical guidance.`
+        : `Namaste ${user?.name?.split(' ')[0] || 'Officer'}! I am your **StatWise AI Learning Assistant**.\n\nI have access to your competency profile, current role requirements, and learning path. How can I assist your capacity-building journey today?`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -152,7 +177,7 @@ export default function AssistantPage() {
           <div className="px-6 py-2 border-t border-slate-100">
             <p className="text-xs font-semibold text-slate-400 mb-2">Suggested questions:</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {STARTER_PROMPTS.map((prompt, i) => {
+              {starterPrompts.map((prompt, i) => {
                 const Icon = prompt.icon;
                 return (
                   <button

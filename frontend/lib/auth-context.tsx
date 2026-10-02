@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import * as store from '@/lib/store';
-import { AuthService } from '@/lib/auth-service';
+import { AuthService, UserBiometricCheck } from '@/lib/auth-service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +22,8 @@ export interface User {
   assessmentCompleted: boolean;
   onboardingCompleted: boolean;
   faceEnrolled: boolean;
+  faceAuthenticationEnabled: boolean;
+  faceEnrollmentStatus: 'NOT_ENROLLED' | 'ENROLLED' | 'REVOKED';
   faceTemplate?: string;
   faceEnrolledAt?: string;
   enrolledFaceThumbnail?: string;
@@ -29,12 +31,19 @@ export interface User {
 
 interface AuthContextType {
   user: User | null;
-  token: string | null; // kept for API compatibility (AI assistant, quiz generator)
+  token: string | null;
   login: (email: string, password: string) => Promise<string>;
-  loginWithFace: (officerId: string, liveFaceTemplate?: string, options?: { simulateFailure?: boolean }) => Promise<string>;
-  enrollFace: (template: string, thumbnail?: string) => Promise<void>;
+  loginWithFace: (
+    identifier: string,
+    liveFaceTemplate?: string,
+    options?: { challengeToken?: string; livenessResponse?: string; simulateFailure?: boolean }
+  ) => Promise<string>;
+  checkUserBiometricStatus: (identifier: string) => Promise<UserBiometricCheck>;
+  enrollFace: (template: string, thumbnail?: string, consent?: boolean) => Promise<void>;
+  disableFace: () => Promise<void>;
+  resetFace: (userIdOrEmail: string) => Promise<void>;
   refreshUser: () => void;
-  register: (data: any) => Promise<void>;
+  register: (data: any) => Promise<User>;
   logout: () => void;
   switchDemoUser: (userId: string) => void;
   resetUserData: () => void;
@@ -46,6 +55,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 function recordToUser(record: store.UserRecord): User {
+  const isEnrolled = !!(
+    (record.faceEnrolled || record.profile.faceEnrolled) &&
+    (record.faceTemplate || record.profile.faceTemplate) &&
+    record.faceEnrollmentStatus !== 'REVOKED'
+  );
+
   return {
     id: record.profile.id,
     name: record.profile.name,
@@ -64,7 +79,9 @@ function recordToUser(record: store.UserRecord): User {
     current_assignment: record.profile.current_assignment,
     assessmentCompleted: record.assessmentCompleted,
     onboardingCompleted: record.onboardingCompleted ?? record.assessmentCompleted,
-    faceEnrolled: record.faceEnrolled ?? record.profile.faceEnrolled ?? false,
+    faceEnrolled: isEnrolled,
+    faceAuthenticationEnabled: isEnrolled && (record.faceAuthenticationEnabled ?? record.profile.faceAuthenticationEnabled ?? true),
+    faceEnrollmentStatus: isEnrolled ? 'ENROLLED' : (record.faceEnrollmentStatus || record.profile.faceEnrollmentStatus || 'NOT_ENROLLED'),
     faceTemplate: record.faceTemplate ?? record.profile.faceTemplate,
     faceEnrolledAt: record.faceEnrolledAt ?? record.profile.faceEnrolledAt,
     enrolledFaceThumbnail: record.enrolledFaceThumbnail ?? record.profile.enrolledFaceThumbnail,
@@ -100,39 +117,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return res.redirectUrl;
   }, []);
 
-  const loginWithFace = useCallback(async (officerId: string, liveFaceTemplate?: string, options?: { simulateFailure?: boolean }): Promise<string> => {
-    const res = await AuthService.loginWithFace(officerId, liveFaceTemplate, options);
+  const checkUserBiometricStatus = useCallback(async (identifier: string): Promise<UserBiometricCheck> => {
+    return AuthService.checkUserBiometricStatus(identifier);
+  }, []);
+
+  const loginWithFace = useCallback(async (
+    identifier: string,
+    liveFaceTemplate?: string,
+    options?: { challengeToken?: string; livenessResponse?: string; simulateFailure?: boolean }
+  ): Promise<string> => {
+    const res = await AuthService.loginWithFace(identifier, liveFaceTemplate, options);
     setUser(recordToUser(res.user));
     return res.redirectUrl;
   }, []);
 
-  const enrollFace = useCallback(async (template: string, thumbnail?: string) => {
+  const enrollFace = useCallback(async (template: string, thumbnail?: string, consent: boolean = true) => {
     if (!user) throw new Error('No authenticated user session found to enroll face.');
-    const updated = await AuthService.enrollFace(user.id, template, thumbnail);
+    const updated = await AuthService.enrollFace(user.id, template, thumbnail, consent);
     setUser(recordToUser(updated));
   }, [user]);
 
-  const register = useCallback(async (data: any) => {
-    const record = store.registerUser({
-      name: data.name,
-      email: data.email,
-      password: data.password,
-      employee_id: data.employee_id || data.employeeId,
-      // role is intentionally omitted — store always assigns 'employee' for self-registration
-      designation: data.designation || 'Statistical Officer',
-      department: data.department || data.department_name || 'National Statistical Office',
-      years_experience: Number(data.years_experience) || 0,
-      education: data.education || '',
-      current_assignment: data.current_assignment || '',
-      career_goal: data.career_goal || '',
-    });
-    setUser(recordToUser(record));
+  const disableFace = useCallback(async () => {
+    if (!user) throw new Error('No authenticated user session found.');
+    const updated = await AuthService.disableFace(user.id);
+    setUser(recordToUser(updated));
+  }, [user]);
+
+  const resetFace = useCallback(async (userIdOrEmail: string) => {
+    const updated = await AuthService.resetFace(userIdOrEmail);
+    if (updated && user && user.id === updated.profile.id) {
+      setUser(recordToUser(updated));
+    } else {
+      refreshUser();
+    }
+  }, [user, refreshUser]);
+
+  const register = useCallback(async (data: any): Promise<User> => {
+    const record = await AuthService.registerUser(data);
+    const mapped = recordToUser(record);
+    setUser(mapped);
+    return mapped;
   }, []);
 
   const logout = useCallback(() => {
     store.logoutUser();
     setUser(null);
-    // Also clear any backend token
     localStorage.removeItem('statwise_token');
     localStorage.removeItem('statwise_user');
     localStorage.removeItem('statsetu_token');
@@ -145,13 +174,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const record = store.getCurrentUser();
     if (record) {
       setUser(recordToUser(record));
-      // Route to the correct role-based destination
       const role = record.profile.role;
-      const isOnboarded = record.onboardingCompleted ?? record.assessmentCompleted ?? false;
       let dest = '/dashboard';
       if (role === 'admin') dest = '/admin';
       else if (role === 'trainer') dest = '/trainer';
-      else if (!isOnboarded) dest = '/onboarding';
       window.location.href = dest;
     }
   }, []);
@@ -165,7 +191,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, loginWithFace, enrollFace, refreshUser, register, logout, switchDemoUser, resetUserData, isLoading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        login,
+        loginWithFace,
+        checkUserBiometricStatus,
+        enrollFace,
+        disableFace,
+        resetFace,
+        refreshUser,
+        register,
+        logout,
+        switchDemoUser,
+        resetUserData,
+        isLoading,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
